@@ -78,6 +78,42 @@ const rawImageData = await loadImage('/example.png');
 const jxlBuffer = await encode(rawImageData, { lossless: true });
 ```
 
+## Choosing an entry point
+
+This is the package where entry point choice matters most. JXL ships four
+encoder builds and two decoder builds - 7.9 MB of wasm in total. `encode.js`
+and `decode.js` pick between them at runtime, which is the right default, but
+a bundler following that dispatch cannot know which branch will be taken and
+so emits every `.wasm`. Two of them, `jxl_enc_mt.wasm` (1.3 MB) and
+`jxl_enc_mt_simd.wasm` (1.8 MB), cannot load at all unless the page is
+cross-origin isolated.
+
+If you already know your target, import a single-variant entry point instead.
+Each has the same API as the default - same options, same `init()`, same
+`dispose()` - but is statically bound to one build, so you ship one binary.
+
+| Import | Build | Use when |
+| --- | --- | --- |
+| `@jsquash/jxl/encode.js` | picks at runtime | You do not know the target, or you want threads where available and a fallback where not. |
+| `@jsquash/jxl/encode-simd.js` | `jxl_enc_simd.wasm` | Node, Deno, Cloudflare Workers, or any browser page that is not cross-origin isolated. None of these can use threads, so the 3.1 MB of threaded builds is pure waste. |
+| `@jsquash/jxl/encode-mt.js` | `jxl_enc_mt_simd.wasm` | You have set the COOP/COEP headers below and encode from a Worker. Bound to the mt+SIMD build: every browser with `SharedArrayBuffer` also has WebAssembly SIMD, so a caller opting into threads can always have both. |
+| `@jsquash/jxl/encode-scalar.js` | `jxl_enc.wasm` | You must support a runtime without WebAssembly SIMD. Smallest build, and by a wide margin the slowest. |
+| `@jsquash/jxl/decode.js` | picks at runtime | Default. |
+| `@jsquash/jxl/decode-simd.js` | `jxl_dec_simd.wasm` | Anywhere with WebAssembly SIMD, which is every runtime these packages target. |
+| `@jsquash/jxl/decode-scalar.js` | `jxl_dec.wasm` | Same caveat as `encode-scalar.js`. |
+
+```js
+import encode from '@jsquash/jxl/encode-simd.js';
+import decode from '@jsquash/jxl/decode-simd.js';
+
+const jxlBuffer = await encode(rawImageData);
+```
+
+The variants do no feature detection, so there is no fallback: `encode-mt.js`
+will fail to instantiate without cross-origin isolation, and `encode-simd.js`
+will fail on a runtime without SIMD. That is the point - pick the one that
+matches where your code runs, or stay on the default.
+
 ## Activate Multithreading
 
 By default, the encode function will use a single thread to encode the image. If you want to speed this up you can enable multithreading with the following.

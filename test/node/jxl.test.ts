@@ -3,6 +3,12 @@ import { importWasmModule, getFixturesImage } from './utils.js';
 
 import decode, { init as initDecode } from '@jsquash/jxl/decode.js';
 import encode, { init as initEncode } from '@jsquash/jxl/encode.js';
+import decodeSimd, {
+  init as initDecodeSimd,
+} from '@jsquash/jxl/decode-simd.js';
+import encodeSimd, {
+  init as initEncodeSimd,
+} from '@jsquash/jxl/encode-simd.js';
 
 test('can successfully decode image', async (t) => {
   const [testImage, decodeWasmModule] = await Promise.all([
@@ -102,5 +108,44 @@ test('encodes lossless even with conflicting quality option', async (t) => {
     decodedData.data,
     originalImageData.data,
     'Decoded data should match original even with conflicting quality',
+  );
+});
+
+test('single-variant entry points round-trip an image', async (t) => {
+  // encode-simd.js and decode-simd.js are statically bound to the SIMD builds,
+  // so they never consult wasm-feature-detect and never reach for the threaded
+  // encoder. Same API as encode.js/decode.js, including init() and dispose().
+  const [encodeWasmModule, decodeWasmModule] = await Promise.all([
+    importWasmModule('node_modules/@jsquash/jxl/codec/enc/jxl_enc_simd.wasm'),
+    importWasmModule('node_modules/@jsquash/jxl/codec/dec/jxl_dec_simd.wasm'),
+  ]);
+  await initEncodeSimd(encodeWasmModule);
+  initDecodeSimd(decodeWasmModule);
+
+  const originalImageData = {
+    width: 12,
+    height: 12,
+    data: new Uint8ClampedArray(4 * 12 * 12),
+    colorSpace: 'srgb' as const,
+  };
+  for (let i = 0; i < originalImageData.data.length; i++) {
+    originalImageData.data[i] = (i * 11 + 3) % 256;
+  }
+
+  const encodedData = await encodeSimd(originalImageData, { lossless: true });
+  t.assert(encodedData instanceof ArrayBuffer);
+
+  const decodedData = await decodeSimd(encodedData);
+  if (!decodedData) {
+    t.fail('Failed to decode image');
+    return;
+  }
+
+  t.is(decodedData.width, originalImageData.width);
+  t.is(decodedData.height, originalImageData.height);
+  t.deepEqual(
+    decodedData.data,
+    originalImageData.data,
+    'Decoded data should match original through the single-variant entries',
   );
 });
