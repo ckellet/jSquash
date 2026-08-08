@@ -72,6 +72,64 @@ const rawImageData = await loadImage('/example.png');
 const webpBuffer = await encode(rawImageData);
 ```
 
+## Colour profiles (ICC)
+
+`decode` returns pixels in the file's **own** colour space, not sRGB. A Display
+P3 or Adobe RGB WebP decodes to the numbers that were in the file; what those
+numbers mean is described by the image's embedded ICC profile.
+
+This package **carries profiles, it does not apply them**. It will not transform
+pixels between colour spaces - use a colour management library, or the browser's
+own (a `canvas` created with the right `colorSpace`, or `createImageBitmap`), if
+you need that. Before this API existed the profile was discarded on decode and
+never written on encode, so a wide-gamut image silently round-tripped as if it
+were sRGB and came out desaturated in any colour-managed viewer.
+
+See [docs/colour-management.md](/docs/colour-management.md) for the full design.
+
+### decodeWithMetadata(data: ArrayBuffer): Promise<DecodedImage>
+
+Like `decode`, but returns the image together with its embedded metadata:
+
+```ts
+{ image: ImageData, metadata: { icc?: Uint8Array, exif?: Uint8Array } }
+```
+
+`metadata.icc` holds the raw profile from the file's `ICCP` chunk, or is absent
+when the image carries none. `metadata.exif` is always absent today.
+
+`decode` is unchanged and still resolves to a plain `ImageData` you can put
+straight on a canvas. Metadata lives on a separate function precisely so that
+signature never changes.
+
+### readIccProfile(data: ArrayBuffer): Promise<Uint8Array | undefined>
+
+Reads the profile **without decoding any pixels** - it only demuxes the RIFF
+container. Use this to ask "what colour space is this file in?" cheaply.
+Resolves to `undefined` when there is no profile, or when the file is present
+but unreadable; metadata never throws.
+
+### encode(data, options?: { ...EncodeOptions, icc?: Uint8Array | ArrayBuffer })
+
+Pass `icc` to embed a profile as an `ICCP` chunk. Omit it and the output is
+byte-for-byte what this encoder has always produced. The pixels are written
+unchanged, so the profile must be the one they are already in.
+
+```js
+import { decodeWithMetadata, encode } from '@jsquash/webp';
+
+const { image, metadata } = await decodeWithMetadata(await file.arrayBuffer());
+// ... resize, filter, whatever - as long as you do not change colour space
+const output = await encode(image, { icc: metadata.icc });
+```
+
+Carrying a profile switches the output to WebP's extended (VP8X) container: the
+profile plus 8 bytes of chunk header, and 18 more for the VP8X header if the
+file did not already need one (images with alpha always do).
+
+An `icc` value that is not a plausible ICC profile throws before any encoding
+work happens.
+
 ## Manual WASM initialisation (not recommended)
 
 In most situations there is no need to manually initialise the provided WebAssembly modules.

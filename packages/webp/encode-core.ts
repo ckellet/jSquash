@@ -8,9 +8,9 @@
  * share this implementation so they cannot drift apart.
  */
 import type { WebPModule } from './codec/enc/webp_enc.js';
-import type { EncodeOptions } from './meta.js';
+import type { EncodeOptions, WebPEncodeOptions } from './meta.js';
 
-import { defaultOptions } from './meta.js';
+import { defaultOptions, toIccProfileBytes } from './meta.js';
 import {
   disposeEmscriptenModule,
   initEmscriptenModule,
@@ -63,15 +63,33 @@ export function createEncoder(loadCodec: CodecLoader) {
 
   async function encode(
     data: ImageData,
-    options: Partial<EncodeOptions> = {},
+    options: WebPEncodeOptions = {},
   ): Promise<ArrayBuffer> {
     if (!emscriptenModule) emscriptenModule = init();
 
-    const _options: EncodeOptions = { ...defaultOptions, ...options };
+    // `icc` is jSquash's, not libwebp's, so it is peeled off before the rest
+    // is handed to the WebPConfig binding.
+    const { icc, ...config } = options;
+    const _options: EncodeOptions = { ...defaultOptions, ...config };
+
+    // Validated on this side of the boundary so the error names the actual
+    // problem, and eagerly - a bad profile is a caller error, unlike a bad one
+    // on the way in - but only when there is one, so the common call stays
+    // exactly what it was.
+    const profile = icc === undefined ? undefined : toIccProfileBytes(icc);
+
     const module = await emscriptenModule;
 
     const result = withPixelBuffer(module, data.data, (pointer) =>
-      module.encode(pointer, data.width, data.height, _options),
+      profile === undefined
+        ? module.encode(pointer, data.width, data.height, _options)
+        : module.encode_with_icc_profile(
+            pointer,
+            data.width,
+            data.height,
+            _options,
+            profile,
+          ),
     );
 
     if (!result) throw new Error('Encoding error.');

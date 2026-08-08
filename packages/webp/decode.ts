@@ -21,11 +21,13 @@ import { createDecoder } from './decode-core.js';
 // libwebp's decode path has SIMD implementations of the transforms and colour
 // conversion. Import './decode-simd.js' to commit to that build and avoid
 // shipping the baseline one alongside it.
-const { init, dispose, decode } = createDecoder(async () =>
-  (await simd())
-    ? (await import('./codec/dec/webp_dec_simd.js')).default
-    : (await import('./codec/dec/webp_dec.js')).default,
-);
+const { init, dispose, decode, decodeWithMetadata, readIccProfile } =
+  createDecoder(async () =>
+    (await simd())
+      ? (await import('./codec/dec/webp_dec_simd.js')).default
+      : (await import('./codec/dec/webp_dec.js')).default,
+  );
 
-export { init, dispose };
+export { init, dispose, decodeWithMetadata, readIccProfile };
+export type { DecodedImage, ImageMetadata } from './meta.js';
 export default decode;

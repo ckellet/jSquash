@@ -18,7 +18,9 @@
 import codec from './codec/dec/webp_dec_simd.js';
 import { createDecoder } from './decode-core.js';
 
-const { init, dispose, decode } = createDecoder(async () => codec);
+const { init, dispose, decode, decodeWithMetadata, readIccProfile } =
+  createDecoder(async () => codec);
 
-export { init, dispose };
+export { init, dispose, decodeWithMetadata, readIccProfile };
+export type { DecodedImage, ImageMetadata } from './meta.js';
 export default decode;

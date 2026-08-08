@@ -5,9 +5,18 @@ export {
 } from './encode.js';
 export {
   default as decode,
+  decodeWithMetadata,
+  readIccProfile,
   init as initDecode,
   dispose as disposeDecoder,
 } from './decode.js';
+export { toIccProfileBytes } from './meta.js';
+export type {
+  DecodedImage,
+  IccProfileInput,
+  ImageMetadata,
+  WebPEncodeOptions,
+} from './meta.js';
 
 import { dispose as disposeEncoderFn } from './encode.js';
 import { dispose as disposeDecoderFn } from './decode.js';

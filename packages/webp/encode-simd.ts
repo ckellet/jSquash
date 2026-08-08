@@ -26,4 +26,5 @@ import { createEncoder } from './encode-core.js';
 const { init, dispose, encode } = createEncoder(async () => codec);
 
 export { init, dispose };
+export type { IccProfileInput, WebPEncodeOptions } from './meta.js';
 export default encode;
