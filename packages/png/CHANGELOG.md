@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- ICC colour profile passthrough. Previously the `iCCP` chunk was discarded on
+  decode and never written on encode, so a Display P3 or Adobe RGB image
+  silently round-tripped as if it were sRGB.
+    - `decodeWithMetadata` returns `{ image, metadata }`, where `metadata.icc`
+      holds the raw profile when the image carries one
+    - `readIccProfile` reads the profile without decoding any pixels
+    - `encode` accepts an `icc` option to embed a profile
+- `decode` and `encode` are unchanged for callers who do not ask for metadata,
+  and encoder output is byte-for-byte identical when no profile is supplied.
+  Profiles are carried, never applied - see
+  [docs/colour-management.md](/docs/colour-management.md).
+
 ## @jsquash/png@3.1.1
 
 ### Fixes

@@ -20,10 +20,13 @@ import type { ImageDataRGBA16 } from './codec/pkg/squoosh_png.js';
 import {
   decode as pngDecodeWasm,
   decode_rgba16 as pngDecodeRgba16Wasm,
+  read_icc_profile as pngReadIccProfileWasm,
 } from './codec/pkg/squoosh_png.js';
 import { init, dispose } from './init.js';
+import type { DecodedImage, ImageMetadata } from './meta.js';
 
 export { init, dispose };
+export type { DecodedImage, ImageMetadata };
 
 export interface DecodeOptions {
   bitDepth?: 8 | 16;
@@ -56,6 +59,70 @@ export async function decode(
   if (!imageData) throw new Error('Encoding error.');
 
   return imageData;
+}
+
+/**
+ * Decode an image and return it together with its embedded metadata.
+ *
+ * Separate from `decode` rather than an option on it because it returns
+ * something else. Switching a return type on a flag makes the common call -
+ * `const image = await decode(buf)` - depend on a value TypeScript can only
+ * narrow when the flag is a literal, so anyone building an options object
+ * dynamically ends up with a union to unpick. `decode` stays exactly as it was,
+ * and callers who want metadata reach for a different name.
+ *
+ * PNG's `iCCP` chunk is the only metadata surfaced today; `metadata.exif` is
+ * always absent. See `docs/colour-management.md`.
+ */
+export async function decodeWithMetadata(
+  data: ArrayBuffer,
+  options: { bitDepth: 16 },
+): Promise<DecodedImage<ImageDataRGBA16>>;
+export async function decodeWithMetadata(
+  data: ArrayBuffer,
+  options?: { bitDepth?: 8 },
+): Promise<DecodedImage<ImageData>>;
+export async function decodeWithMetadata(
+  data: ArrayBuffer,
+  options: DecodeOptions = {},
+): Promise<DecodedImage<ImageData | ImageDataRGBA16>> {
+  await init();
+
+  const { bitDepth = 8 } = options;
+  const bytes = new Uint8Array(data);
+
+  const image =
+    bitDepth === 16
+      ? await pngDecodeRgba16Wasm(bytes)
+      : await pngDecodeWasm(bytes);
+  if (!image) throw new Error('Encoding error.');
+
+  // A second pass over the same input, which stops at the first IDAT rather
+  // than decoding anything. That costs one more copy of the *compressed* bytes
+  // across the wasm boundary and buys a pixel path that is untouched for
+  // callers who never ask for metadata.
+  const icc = pngReadIccProfileWasm(bytes);
+
+  const metadata: ImageMetadata = {};
+  if (icc && icc.length > 0) metadata.icc = icc;
+
+  return { image, metadata };
+}
+
+/**
+ * Read an image's ICC profile without decoding any pixels.
+ *
+ * Returns `undefined` when the image carries no profile, or when the profile
+ * is there but unreadable - metadata is advisory, and a file whose pixels
+ * decode perfectly well should not fail over a malformed ancillary chunk.
+ */
+export async function readIccProfile(
+  data: ArrayBuffer,
+): Promise<Uint8Array | undefined> {
+  await init();
+
+  const icc = pngReadIccProfileWasm(new Uint8Array(data));
+  return icc && icc.length > 0 ? icc : undefined;
 }
 
 export default decode;

@@ -13,6 +13,11 @@ crate-type = ["cdylib"]
 
 [dependencies]
 png = "0.17.10"
+# Needed to deflate ICC profiles for the iCCP chunk: `png` 0.17 can only write
+# that chunk through private encoder internals. This is the compressor `png`
+# already uses for IDAT, so naming it directly adds no code to the binary -
+# reaching for flate2 instead would link miniz_oxide's deflate for +26.9 KB.
+fdeflate = "0.3"
 wasm-bindgen = "0.2.89"
 "js-sys" = "0.3.66"
 web-sys = { version = "0.3.66", features = ["ImageData"] }
