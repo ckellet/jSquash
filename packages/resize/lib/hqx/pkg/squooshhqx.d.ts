@@ -39,3 +39,8 @@ export function initSync(module: SyncInitInput): InitOutput;
 * @returns {Promise<InitOutput>}
 */
 export default function __wbg_init (module_or_path?: InitInput | Promise<InitInput>): Promise<InitOutput>;
+/**
+* Release the instantiated module so its WebAssembly.Memory can be
+* garbage collected. The next init() call instantiates a fresh one.
+*/
+export function dispose(): void;

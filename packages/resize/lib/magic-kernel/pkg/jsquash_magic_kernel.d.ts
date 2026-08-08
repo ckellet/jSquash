@@ -1,13 +1,13 @@
 /* tslint:disable */
 /* eslint-disable */
 
-export function resize(data: Uint8Array, input_width: number, input_height: number, output_width: number, output_height: number, version: string): ImageData;
+export function resize(data: Uint8Array, input_width: number, input_height: number, output_width: number, output_height: number, version: string, premultiply: boolean, linear_rgb: boolean): ImageData;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly resize: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => any;
+  readonly resize: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => any;
   readonly __wbindgen_free: (a: number, b: number, c: number) => void;
   readonly __wbindgen_externrefs: WebAssembly.Table;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
@@ -36,3 +36,8 @@ export function initSync(module: { module: SyncInitInput } | SyncInitInput): Ini
 * @returns {Promise<InitOutput>}
 */
 export default function __wbg_init (module_or_path?: { module_or_path: InitInput | Promise<InitInput> } | InitInput | Promise<InitInput>): Promise<InitOutput>;
+/**
+* Release the instantiated module so its WebAssembly.Memory can be
+* garbage collected. The next init() call instantiates a fresh one.
+*/
+export function dispose(): void;

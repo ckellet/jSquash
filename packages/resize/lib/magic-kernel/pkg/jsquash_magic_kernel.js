@@ -87,14 +87,16 @@ let WASM_VECTOR_LEN = 0;
  * @param {number} output_width
  * @param {number} output_height
  * @param {string} version
+ * @param {boolean} premultiply
+ * @param {boolean} linear_rgb
  * @returns {ImageData}
  */
-export function resize(data, input_width, input_height, output_width, output_height, version) {
+export function resize(data, input_width, input_height, output_width, output_height, version, premultiply, linear_rgb) {
     const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(version, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.resize(ptr0, len0, input_width, input_height, output_width, output_height, ptr1, len1);
+    const ret = wasm.resize(ptr0, len0, input_width, input_height, output_width, output_height, ptr1, len1, premultiply, linear_rgb);
     return ret;
 }
 
@@ -211,6 +213,9 @@ async function __wbg_init(module_or_path) {
 
 export { initSync };
 export default __wbg_init;
+
+// --- jSquash glue patch ---
+
 const isServiceWorker = globalThis.ServiceWorkerGlobalScope !== undefined;
 const isRunningInCloudFlareWorkers = isServiceWorker && typeof self !== 'undefined' && globalThis.caches && globalThis.caches.default !== undefined;
 const isRunningInNode = typeof process === 'object' && process.release && process.release.name === 'node';
@@ -234,4 +239,19 @@ if (isRunningInCloudFlareWorkers || isRunningInNode) {
   if (typeof self !== 'undefined' && self.location === undefined) {
     self.location = { href: '' };
   }
+}
+
+/**
+ * Release the instantiated module so its WebAssembly.Memory can be garbage
+ * collected. The next init() call instantiates a fresh one.
+ *
+ * Only call this once outstanding work has finished - any typed array still
+ * pointing into the old heap is detached, and for the threaded builds the
+ * worker pool must be idle.
+ */
+export function dispose() {
+  wasm = undefined;
+  __wbg_init.__wbindgen_wasm_module = undefined;
+  cachedUint8ArrayMemory0 = null;
+  cachedUint8ClampedArrayMemory0 = null;
 }

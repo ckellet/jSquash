@@ -6,7 +6,7 @@ edition = "2021"
 publish = false
 
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = ["-O", "--no-validation"]
+wasm-opt = ["-O3", "--enable-simd", "--no-validation"]
 
 [lib]
 crate-type = ["cdylib"]
@@ -18,5 +18,9 @@ js-sys = "0.3.83"
 web-sys = { version = "0.3.83", features = ["ImageData"] }
 
 [profile.release]
-lto = true
-opt-level = "s"
+# These crates are compute bound, not size bound - the largest is a couple of
+# hundred KB. opt-level = "s" was costing loop vectorisation and inlining in
+# the hot pixel loops for a saving that does not matter here.
+opt-level = 3
+lto = "fat"
+codegen-units = 1

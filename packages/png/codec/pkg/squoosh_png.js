@@ -152,6 +152,13 @@ export class ImageDataRGBA16 {
         wasm.__wbg_imagedatargba16_free(ptr);
     }
     /**
+    * @returns {Uint16Array}
+    */
+    get data() {
+        const ret = wasm.imagedatargba16_data(this.__wbg_ptr);
+        return takeObject(ret);
+    }
+    /**
     * @returns {number}
     */
     get width() {
@@ -164,13 +171,6 @@ export class ImageDataRGBA16 {
     get height() {
         const ret = wasm.imagedatargba16_height(this.__wbg_ptr);
         return ret >>> 0;
-    }
-    /**
-    * @returns {Uint16Array}
-    */
-    get data() {
-        const ret = wasm.imagedatargba16_data(this.__wbg_ptr);
-        return takeObject(ret);
     }
 }
 
@@ -208,6 +208,12 @@ async function __wbg_load(module, imports) {
 function __wbg_get_imports() {
     const imports = {};
     imports.wbg = {};
+    imports.wbg.__wbg_newwithownedu8clampedarrayandsh_91db5987993a08fb = function(arg0, arg1, arg2, arg3) {
+        var v0 = getClampedArrayU8FromWasm0(arg0, arg1).slice();
+        wasm.__wbindgen_free(arg0, arg1 * 1, 1);
+        const ret = new ImageData(v0, arg2 >>> 0, arg3 >>> 0);
+        return addHeapObject(ret);
+    };
     imports.wbg.__wbindgen_memory = function() {
         const ret = wasm.memory;
         return addHeapObject(ret);
@@ -222,12 +228,6 @@ function __wbg_get_imports() {
     };
     imports.wbg.__wbindgen_object_drop_ref = function(arg0) {
         takeObject(arg0);
-    };
-    imports.wbg.__wbg_newwithownedu8clampedarrayandsh_91db5987993a08fb = function(arg0, arg1, arg2, arg3) {
-        var v0 = getClampedArrayU8FromWasm0(arg0, arg1).slice();
-        wasm.__wbindgen_free(arg0, arg1 * 1, 1);
-        const ret = new ImageData(v0, arg2 >>> 0, arg3 >>> 0);
-        return addHeapObject(ret);
     };
     imports.wbg.__wbindgen_throw = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
@@ -288,6 +288,9 @@ async function __wbg_init(input) {
 
 export { initSync }
 export default __wbg_init;
+
+// --- jSquash glue patch ---
+
 const isServiceWorker = globalThis.ServiceWorkerGlobalScope !== undefined;
 const isRunningInCloudFlareWorkers = isServiceWorker && typeof self !== 'undefined' && globalThis.caches && globalThis.caches.default !== undefined;
 const isRunningInNode = typeof process === 'object' && process.release && process.release.name === 'node';
@@ -311,4 +314,20 @@ if (isRunningInCloudFlareWorkers || isRunningInNode) {
   if (typeof self !== 'undefined' && self.location === undefined) {
     self.location = { href: '' };
   }
+}
+
+/**
+ * Release the instantiated module so its WebAssembly.Memory can be garbage
+ * collected. The next init() call instantiates a fresh one.
+ *
+ * Only call this once outstanding work has finished - any typed array still
+ * pointing into the old heap is detached, and for the threaded builds the
+ * worker pool must be idle.
+ */
+export function dispose() {
+  wasm = undefined;
+  __wbg_init.__wbindgen_wasm_module = undefined;
+  cachedUint8Memory0 = null;
+  cachedUint8ClampedMemory0 = null;
+  cachedInt32Memory0 = null;
 }

@@ -157,6 +157,9 @@ async function __wbg_init(input) {
 
 export { initSync }
 export default __wbg_init;
+
+// --- jSquash glue patch ---
+
 const isServiceWorker = globalThis.ServiceWorkerGlobalScope !== undefined;
 const isRunningInCloudFlareWorkers = isServiceWorker && typeof self !== 'undefined' && globalThis.caches && globalThis.caches.default !== undefined;
 const isRunningInNode = typeof process === 'object' && process.release && process.release.name === 'node';
@@ -180,4 +183,20 @@ if (isRunningInCloudFlareWorkers || isRunningInNode) {
   if (typeof self !== 'undefined' && self.location === undefined) {
     self.location = { href: '' };
   }
+}
+
+/**
+ * Release the instantiated module so its WebAssembly.Memory can be garbage
+ * collected. The next init() call instantiates a fresh one.
+ *
+ * Only call this once outstanding work has finished - any typed array still
+ * pointing into the old heap is detached, and for the threaded builds the
+ * worker pool must be idle.
+ */
+export function dispose() {
+  wasm = undefined;
+  __wbg_init.__wbindgen_wasm_module = undefined;
+  cachedUint8Memory0 = null;
+  cachedInt32Memory0 = null;
+  cachedUint8ClampedMemory0 = null;
 }

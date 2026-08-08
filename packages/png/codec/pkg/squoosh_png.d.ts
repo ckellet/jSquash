@@ -38,12 +38,12 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly __wbg_imagedatargba16_free: (a: number) => void;
-  readonly imagedatargba16_width: (a: number) => number;
-  readonly imagedatargba16_height: (a: number) => number;
-  readonly imagedatargba16_data: (a: number) => number;
-  readonly encode: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
   readonly decode: (a: number, b: number) => number;
   readonly decode_rgba16: (a: number, b: number) => number;
+  readonly encode: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+  readonly imagedatargba16_data: (a: number) => number;
+  readonly imagedatargba16_height: (a: number) => number;
+  readonly imagedatargba16_width: (a: number) => number;
   readonly __wbindgen_free: (a: number, b: number, c: number) => void;
   readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
@@ -69,3 +69,8 @@ export function initSync(module: SyncInitInput): InitOutput;
 * @returns {Promise<InitOutput>}
 */
 export default function __wbg_init (module_or_path?: InitInput | Promise<InitInput>): Promise<InitOutput>;
+/**
+* Release the instantiated module so its WebAssembly.Memory can be
+* garbage collected. The next init() call instantiates a fresh one.
+*/
+export function dispose(): void;
