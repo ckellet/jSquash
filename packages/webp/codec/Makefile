@@ -6,7 +6,7 @@ CODEC_SIMD_BUILD_DIR := $(CODEC_BUILD_ROOT)/simd
 ENVIRONMENT = web,worker
 
 PRE_JS = pre.js
-OUT_JS = enc/webp_enc.js enc/webp_enc_simd.js dec/webp_dec.js
+OUT_JS = enc/webp_enc.js enc/webp_enc_simd.js dec/webp_dec.js dec/webp_dec_simd.js
 OUT_WASM := $(OUT_JS:.js=.wasm)
 
 .PHONY: all clean
@@ -17,7 +17,7 @@ all: $(OUT_JS)
 $(filter enc/%,$(OUT_JS)): enc/webp_enc.o
 $(filter dec/%,$(OUT_JS)): dec/webp_dec.o
 enc/webp_enc.js dec/webp_dec.js: $(CODEC_BASELINE_BUILD_DIR)/libwebp.a
-enc/webp_enc_simd.js: $(CODEC_SIMD_BUILD_DIR)/libwebp.a
+enc/webp_enc_simd.js dec/webp_dec_simd.js: $(CODEC_SIMD_BUILD_DIR)/libwebp.a
 
 $(OUT_JS):
 	$(LD) \
@@ -28,6 +28,7 @@ $(OUT_JS):
 		-s EXPORT_ES6=1 \
 		-s DYNAMIC_EXECUTION=0 \
 		-s MODULARIZE=1 \
+		-s EXPORTED_RUNTIME_METHODS=HEAPU8 \
 		-o $@ \
 		$+
 

@@ -7,7 +7,7 @@ CODEC_MT_SIMD_BUILD_DIR := $(CODEC_BUILD_ROOT)/mt-simd
 ENVIRONMENT = web,worker
 
 PRE_JS = pre.js
-OUT_JS = enc/jxl_enc.js enc/jxl_enc_mt.js enc/jxl_enc_mt_simd.js dec/jxl_dec.js
+OUT_JS = enc/jxl_enc.js enc/jxl_enc_simd.js enc/jxl_enc_mt.js enc/jxl_enc_mt_simd.js dec/jxl_dec.js dec/jxl_dec_simd.js
 OUT_WASM = $(OUT_JS:.js=.wasm)
 OUT_WORKER = $(OUT_JS:.js=.worker.js)
 
@@ -21,9 +21,12 @@ $(filter dec/%,$(OUT_JS)): dec/jxl_dec.cpp
 
 # For single-threaded build, we compile with threads enabled, but then just don't use them nor link them in.
 enc/jxl_enc.js enc/jxl_enc_mt.js dec/jxl_dec.js: CODEC_BUILD_DIR:=$(CODEC_MT_BUILD_DIR)
-enc/jxl_enc_mt_simd.js: CODEC_BUILD_DIR:=$(CODEC_MT_SIMD_BUILD_DIR)
+enc/jxl_enc_simd.js enc/jxl_enc_mt_simd.js dec/jxl_dec_simd.js: CODEC_BUILD_DIR:=$(CODEC_MT_SIMD_BUILD_DIR)
 
 enc/jxl_enc.js dec/jxl_dec.js: $(CODEC_MT_BUILD_DIR)/lib/libjxl.a
+# SIMD without threads: the libjxl static lib is built with threads available,
+# we simply do not link libjxl_threads or pass -pthread.
+enc/jxl_enc_simd.js dec/jxl_dec_simd.js: $(CODEC_MT_SIMD_BUILD_DIR)/lib/libjxl.a
 enc/jxl_enc_mt.js: $(CODEC_MT_BUILD_DIR)/lib/libjxl.a $(CODEC_MT_BUILD_DIR)/lib/libjxl_threads.a
 enc/jxl_enc_mt_simd.js: $(CODEC_MT_SIMD_BUILD_DIR)/lib/libjxl.a $(CODEC_MT_SIMD_BUILD_DIR)/lib/libjxl_threads.a
 
@@ -50,6 +53,7 @@ $(OUT_JS):
 		-s EXPORT_ES6=1 \
 		-s DYNAMIC_EXECUTION=0 \
 		-s MODULARIZE=1 \
+		-s PTHREAD_POOL_SIZE='Math.min(navigator.hardwareConcurrency,8)' \
 		-o $@ \
 		$+ \
 		$(CODEC_BUILD_DIR)/third_party/brotli/libbrotlidec-static.a \

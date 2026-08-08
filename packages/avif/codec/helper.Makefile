@@ -50,6 +50,7 @@ $(OUT_JS): $(OUT_CPP) $(LIBAOM_OUT) $(CODEC_OUT)
 		-s EXPORT_ES6=1 \
 		-s DYNAMIC_EXECUTION=0 \
 		-s MODULARIZE=1 \
+		-s PTHREAD_POOL_SIZE='Math.min(navigator.hardwareConcurrency,8)' \
 		-s STACK_SIZE=$(STACK_SIZE) \
 		-s INITIAL_MEMORY=$(INITIAL_MEMORY_SIZE) \
 		-o $@ \

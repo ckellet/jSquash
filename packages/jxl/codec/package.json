@@ -1,7 +1,7 @@
 {
   "name": "jxl",
   "scripts": {
-    "build": "../../../tools/build-cpp.sh"
+    "build": "EMSDK_VERSION=2.0.34 ../../../tools/build-cpp.sh"
   },
   "type": "module"
 }

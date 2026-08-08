@@ -21,6 +21,7 @@ LIBSHARPYUV_MT := $(LIBWEBP_DIR)/build_mt/libsharpyuv.a
 export LIBSHARPYUV := $(LIBWEBP_DIR)/build/libsharpyuv.a
 
 OUT_ENC_JS = enc/avif_enc.js
+OUT_ENC_SIMD_JS = enc/avif_enc_simd.js
 OUT_ENC_MT_JS = enc/avif_enc_mt.js
 OUT_DEC_JS = dec/avif_dec.js
 
@@ -32,7 +33,7 @@ HELPER_MAKEFLAGS := -f helper.Makefile
 
 .PHONY: all clean
 
-all: $(OUT_ENC_JS) $(OUT_DEC_JS) $(OUT_ENC_MT_JS)
+all: $(OUT_ENC_JS) $(OUT_ENC_SIMD_JS) $(OUT_DEC_JS) $(OUT_ENC_MT_JS)
 
 # ST-Encoding
 $(OUT_ENC_JS): $(OUT_ENC_CPP) $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_DIR)/CMakeLists.txt $(LIBSHARPYUV_ST)
@@ -51,9 +52,34 @@ $(OUT_ENC_JS): $(OUT_ENC_CPP) $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_DIR)/CMakeLis
 		ENVIRONMENT=$(ENVIRONMENT) \
 		LIBAVIF_FLAGS="-DAVIF_CODEC_AOM_DECODE=0 -DAVIF_LOCAL_LIBSHARPYUV=ON"
 
+# SIMD-Encoding (no threads)
+# Node and Cloudflare Workers cannot use threads but do support SIMD, and
+# without this target they fall back to a build that has neither. libaom is
+# built for a generic target, so this is autovectorisation of the portable C
+# rather than hand-written intrinsics - a smaller win than SIMD in libwebp or
+# libjxl, but a free one.
+# Sequenced after the ST target because both stage libsharpyuv in the same place.
+$(OUT_ENC_SIMD_JS): $(OUT_ENC_CPP) $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_DIR)/CMakeLists.txt $(LIBSHARPYUV_ST) | $(OUT_ENC_JS)
+	mkdir -p $(LIBWEBP_DIR)/build && cp $(LIBSHARPYUV_ST) $(LIBSHARPYUV)
+	$(MAKE) \
+		$(HELPER_MAKEFLAGS) \
+		OUT_JS=$@ \
+		OUT_CPP=$< \
+		CFLAGS="$(CFLAGS) -msimd128" \
+		CXXFLAGS="$(CXXFLAGS) -msimd128" \
+		STACK_SIZE=5242880 \
+		INITIAL_MEMORY_SIZE=16777216 \
+		LIBAOM_FLAGS="\
+			-DCONFIG_AV1_DECODER=0 \
+			-DCONFIG_MULTITHREAD=0 \
+			-DCONFIG_AV1_HIGHBITDEPTH=1 \
+		" \
+		ENVIRONMENT=$(ENVIRONMENT) \
+		LIBAVIF_FLAGS="-DAVIF_CODEC_AOM_DECODE=0 -DAVIF_LOCAL_LIBSHARPYUV=ON"
+
 # MT-Encoding
 # We need to run the ST and MT tasks sequentially to avoid conflicts with the copy of libsharpyuv in the build directory
-$(OUT_ENC_MT_JS): $(OUT_ENC_CPP) $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_DIR)/CMakeLists.txt $(LIBSHARPYUV_MT) | $(OUT_ENC_JS)
+$(OUT_ENC_MT_JS): $(OUT_ENC_CPP) $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_DIR)/CMakeLists.txt $(LIBSHARPYUV_MT) | $(OUT_ENC_JS) $(OUT_ENC_SIMD_JS)
 	mkdir -p $(LIBWEBP_DIR)/build && cp $(LIBSHARPYUV_MT) $(LIBSHARPYUV)
 	$(MAKE) \
 		$(HELPER_MAKEFLAGS) \
@@ -159,4 +185,5 @@ $(LIBSHARPYUV_MT): $(LIBWEBP_DIR)/CMakeLists.txt
 clean:
 	$(MAKE) $(HELPER_MAKEFLAGS) OUT_JS=$(OUT_DEC_JS) clean
 	$(MAKE) $(HELPER_MAKEFLAGS) OUT_JS=$(OUT_ENC_JS) clean
+	$(MAKE) $(HELPER_MAKEFLAGS) OUT_JS=$(OUT_ENC_SIMD_JS) clean
 	$(MAKE) $(HELPER_MAKEFLAGS) OUT_JS=$(OUT_ENC_MT_JS) clean

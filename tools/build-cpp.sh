@@ -2,7 +2,7 @@
 set -e
 
 if [ -z "$EMSDK_VERSION" ]; then
-  EMSDK_VERSION=2.0.34
+  EMSDK_VERSION=3.1.57
 fi
 
 if [ -z "$DEFAULT_CFLAGS" ]; then

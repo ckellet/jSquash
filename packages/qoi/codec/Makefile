@@ -25,6 +25,7 @@ $(OUT_JS):
 		-s EXPORT_ES6=1 \
 		-s DYNAMIC_EXECUTION=0 \
 		-s MODULARIZE=1 \
+		-s EXPORTED_RUNTIME_METHODS=HEAPU8 \
 		-o $@ \
 		$+
 
