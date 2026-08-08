@@ -224,6 +224,35 @@ that are actually shipped.
 
 ### JXL — libjxl @ 9f544641 (Jan 2022, pre-0.7)
 
+> **Resolved, with a stronger reason than the one anticipated below.** The
+> obvious fix - add an option to skip the skcms transform and hand back
+> untransformed pixels with their real profile - is not implementable
+> correctly at this pin. `GetColorEncodingForTarget` ignores the pixel format
+> and, for an xyb-encoded image, returns `output_encoding_info.color_encoding`;
+> `OutputEncodingInfo::Set` falls back to **linear sRGB** whenever the original
+> encoding has no expressible fields, which is precisely the arbitrary-ICC
+> case. `JxlDecoderSetPreferredColorProfile` only speaks `JxlColorEncoding`
+> enums, so the original space cannot be asked for back. What you would get for
+> a lossy Display P3 file - the exact case colour management exists for - is
+> linear light quantised to 8 bits, banded in the shadows, tagged with a
+> synthesised profile. It would work only for `uses_original_profile` files and
+> degrade invisibly for the rest.
+>
+> So `metadata.icc` reports **sRGB**: the profile describing the pixels the
+> caller was actually handed. That keeps JXL consistent with the other packages
+> and safe to feed to another codec's encoder. `readIccProfile` reports the
+> file's original profile without decoding pixels, which is the genuinely
+> useful half and cannot mislabel anything because it never travels attached to
+> pixels.
+>
+> `encode({ icc })` is reachable - `ColorEncoding::SetICC` on the internal path,
+> roughly 15 lines - but was not built. Round trips would not be byte-exact,
+> because `DecideIfWantICC` drops any profile libjxl can reconstruct from
+> fields, so the cross-package contract the other four share would not hold.
+> Non-RGB profiles would also need explicit rejection, since the glue always
+> feeds 4-channel RGBA.
+
+
 Reading is already done and already thrown away, as described under Scope.
 
 Writing is blocked by an architectural choice rather than a missing API. The
@@ -465,11 +494,12 @@ parallel; only the shared type shape from phase 1 couples them.
 | webp | yes | yes | no | +4.1 KB read, +10.1 KB write |
 | jpeg | yes | yes | **yes** | +946 B enc, +4.7 KB dec |
 | avif | yes | yes | no | +224 B |
-| jxl | see below | see below | no | — |
+| jxl | `readIccProfile` only | **no** | no | ~0 |
 
-Verified end to end across packages: a profile read from a PNG survives
-byte-identically through WebP, JPEG and AVIF encoders, and a profile recovered
-from a WebP file can be re-embedded in a JPEG. That portability is the reason
+JXL is the exception and deliberately so - see below. Verified end to end
+across the rest: a profile read from a PNG survives byte-identically through
+WebP, JPEG and AVIF encoders, and a profile recovered from a WebP file can be
+re-embedded in a JPEG. That portability is the reason
 the `ImageMetadata` shape is shared rather than per-package.
 
 Encoding without a profile produces byte-identical output to before in every
