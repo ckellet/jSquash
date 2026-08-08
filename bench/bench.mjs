@@ -14,6 +14,7 @@
 import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadavg, cpus } from 'node:os';
 import { makeImage } from './fixture.mjs';
 import { ssim } from './ssim.mjs';
 
@@ -33,6 +34,29 @@ const COMPARE = flag('compare', null);
 
 const source = makeImage(WIDTH, HEIGHT);
 const results = [];
+
+/**
+ * Timings taken on a loaded machine are not comparable with anything.
+ *
+ * This is easy to forget: a codec build running in the background will
+ * happily make a change look like a 25% regression. Record the load with the
+ * results so past runs can be judged, and refuse to write a file that would
+ * later be mistaken for a clean baseline.
+ */
+const CORES = cpus().length;
+const LOAD = loadavg()[0];
+const LOAD_PER_CORE = LOAD / CORES;
+const LOAD_LIMIT = 1.5;
+const MACHINE_IS_BUSY = LOAD_PER_CORE > LOAD_LIMIT;
+
+if (MACHINE_IS_BUSY) {
+  console.warn(
+    `\n  !! load average ${LOAD.toFixed(1)} across ${CORES} cores ` +
+      `(${LOAD_PER_CORE.toFixed(1)}x oversubscribed).\n` +
+      `     These timings are not comparable with anything. Sizes and SSIM\n` +
+      `     are still valid; wall times are not. Pass --force to record anyway.`,
+  );
+}
 
 /** The codec glue polyfills ImageData on import; use it once available. */
 const asImageData = (img) =>
@@ -220,9 +244,26 @@ if (wanted('oxipng')) {
 
 // ------------------------------------------------------------------ output ---
 const summary = {
-  generatedWith: { runs: RUNS, width: WIDTH, height: HEIGHT, node: process.version },
+  generatedWith: {
+    runs: RUNS,
+    width: WIDTH,
+    height: HEIGHT,
+    node: process.version,
+    cores: CORES,
+    loadAverage: Number(LOAD.toFixed(2)),
+    trustworthyTimings: !MACHINE_IS_BUSY,
+  },
   results,
 };
+
+if (OUT && MACHINE_IS_BUSY && !argv.includes('--force')) {
+  console.error(
+    `\nrefusing to write ${OUT}: the machine is too busy for the timings to\n` +
+      `mean anything. Re-run when it is idle, or pass --force if you only\n` +
+      `want the sizes and SSIM.`,
+  );
+  process.exit(1);
+}
 
 if (OUT) {
   const path = join(HERE, OUT);
@@ -238,6 +279,17 @@ if (COMPARE) {
     process.exit(1);
   }
   const base = JSON.parse(readFileSync(path, 'utf8'));
+  if (base.generatedWith?.trustworthyTimings === false) {
+    console.warn(
+      `\n  !! ${COMPARE} was recorded on a busy machine; its times are not a valid baseline.`,
+    );
+  }
+  if (base.generatedWith?.runs !== RUNS) {
+    console.warn(
+      `\n  !! baseline used --runs ${base.generatedWith?.runs}, this run used ${RUNS}.` +
+        ` Medians over different sample counts are not directly comparable.`,
+    );
+  }
   const key = (r) => `${r.suite}/${r.name}`;
   const baseline = new Map(base.results.map((r) => [key(r), r]));
 
