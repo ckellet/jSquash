@@ -16,8 +16,10 @@
  * and modified it to decode JPEG XL images.
  */
 
-import jxlDecoder, { JXLModule } from './codec/dec/jxl_dec.js';
+import type { JXLModule } from './codec/dec/jxl_dec.js';
+
 import { disposeEmscriptenModule, initEmscriptenModule } from './utils.js';
+import { simd } from 'wasm-feature-detect';
 
 let emscriptenModule: Promise<JXLModule> | undefined;
 
@@ -38,11 +40,25 @@ export async function init(
     actualOptions = module as unknown as Partial<EmscriptenWasm.ModuleOpts>;
   }
 
-  emscriptenModule = initEmscriptenModule(
-    jxlDecoder,
-    actualModule,
-    actualOptions,
-  );
+  // Assign synchronously, before the first await. Callers are documented to
+  // be able to fire init(module) without awaiting it, and two concurrent
+  // calls must share one module rather than each building their own - both
+  // of which stop working the moment this function awaits before assigning.
+  emscriptenModule = (async () => {
+    // libjxl leans on highway for the inverse transforms and colour
+    // conversion, and the decoder was previously linked against the build
+    // with SIMD disabled - so no environment got it, browser or otherwise.
+    const jxlDecoder = (await simd())
+      ? await import('./codec/dec/jxl_dec_simd.js')
+      : await import('./codec/dec/jxl_dec.js');
+
+    return initEmscriptenModule(
+      jxlDecoder.default,
+      actualModule,
+      actualOptions,
+    );
+  })();
+
   return emscriptenModule;
 }
 

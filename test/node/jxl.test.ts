@@ -7,7 +7,7 @@ import encode, { init as initEncode } from '@jsquash/jxl/encode.js';
 test('can successfully decode image', async (t) => {
   const [testImage, decodeWasmModule] = await Promise.all([
     getFixturesImage('test.jxl'),
-    importWasmModule('node_modules/@jsquash/jxl/codec/dec/jxl_dec.wasm'),
+    importWasmModule('node_modules/@jsquash/jxl/codec/dec/jxl_dec_simd.wasm'),
   ]);
   initDecode(decodeWasmModule);
   const data = await decode(testImage);
@@ -18,7 +18,7 @@ test('can successfully decode image', async (t) => {
 
 test('can successfully encode image', async (t) => {
   const encodeWasmModule = await importWasmModule(
-    'node_modules/@jsquash/jxl/codec/enc/jxl_enc.wasm',
+    'node_modules/@jsquash/jxl/codec/enc/jxl_enc_simd.wasm',
   );
   await initEncode(encodeWasmModule);
   const data = await encode({
@@ -32,8 +32,8 @@ test('can successfully encode image', async (t) => {
 
 test('can successfully encode and decode lossless image', async (t) => {
   const [encodeWasmModule, decodeWasmModule] = await Promise.all([
-    importWasmModule('node_modules/@jsquash/jxl/codec/enc/jxl_enc.wasm'),
-    importWasmModule('node_modules/@jsquash/jxl/codec/dec/jxl_dec.wasm'),
+    importWasmModule('node_modules/@jsquash/jxl/codec/enc/jxl_enc_simd.wasm'),
+    importWasmModule('node_modules/@jsquash/jxl/codec/dec/jxl_dec_simd.wasm'),
   ]);
   await initEncode(encodeWasmModule);
   initDecode(decodeWasmModule);
@@ -69,8 +69,8 @@ test('can successfully encode and decode lossless image', async (t) => {
 
 test('encodes lossless even with conflicting quality option', async (t) => {
   const [encodeWasmModule, decodeWasmModule] = await Promise.all([
-    importWasmModule('node_modules/@jsquash/jxl/codec/enc/jxl_enc.wasm'),
-    importWasmModule('node_modules/@jsquash/jxl/codec/dec/jxl_dec.wasm'),
+    importWasmModule('node_modules/@jsquash/jxl/codec/enc/jxl_enc_simd.wasm'),
+    importWasmModule('node_modules/@jsquash/jxl/codec/dec/jxl_dec_simd.wasm'),
   ]);
   await initEncode(encodeWasmModule);
   initDecode(decodeWasmModule);

@@ -164,8 +164,10 @@ const CODECS = [
   },
   {
     suite: 'jxl', spec: '@jsquash/jxl', opts: { quality: 75, effort: 5 },
-    enc: ['@jsquash/jxl/codec/enc/jxl_enc.wasm'],
-    dec: ['@jsquash/jxl/codec/dec/jxl_dec.wasm'],
+    // Node has no SharedArrayBuffer here but does have SIMD, so the dispatch
+    // takes the single-threaded SIMD build.
+    enc: ['@jsquash/jxl/codec/enc/jxl_enc_simd.wasm', '@jsquash/jxl/codec/enc/jxl_enc.wasm'],
+    dec: ['@jsquash/jxl/codec/dec/jxl_dec_simd.wasm', '@jsquash/jxl/codec/dec/jxl_dec.wasm'],
   },
 ];
 
