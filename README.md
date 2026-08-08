@@ -116,6 +116,27 @@ falls back to a binary with no SIMD either.
 
 ### Known trade-offs
 
+- **The wasm payload grew from 15.0 MB to 24.2 MB, and 27% of it is
+  thread-only.** The SIMD variants that made AVIF and JXL two to three times
+  faster are not free, and it is worth knowing where the weight sits:
+
+  | | size | usable in |
+  | --- | --- | --- |
+  | `avif_enc_mt.wasm` | 3.36 MB | cross-origin-isolated browsers only |
+  | `jxl_enc_mt_simd.wasm` | 1.80 MB | cross-origin-isolated browsers only |
+  | `jxl_enc_mt.wasm` | 1.33 MB | cross-origin-isolated browsers only |
+
+  Threads need `SharedArrayBuffer`, so under Node, Deno, Cloudflare Workers or
+  any page without COOP/COEP headers, those 6.5 MB can never be loaded. They
+  are downloaded on `npm install` and may be emitted as assets by a bundler
+  regardless. Compression helps delivery a lot - vectorised code is repetitive,
+  and the AVIF SIMD encoder is +2.9 MB raw for +110 KB brotli - but it does not
+  help install size or bundler output.
+
+  The fix is subpath exports, so a consumer can depend on a single variant
+  instead of the runtime dispatch pulling in all of them. That is a public API
+  change and has not been done here.
+
 - **AVIF is compiled `-Oz`, and that is not a speed compromise.** Measured on
   the bench fixture, `-Oz`, `-O2` and `-O3` encode within 1.5% of each other -
   inside run-to-run noise - while `-O2`/`-O3` add ~8% to the binary. libaom's
