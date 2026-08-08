@@ -3,6 +3,9 @@ import { importWasmModule, getFixturesImage, decoded } from './utils.js';
 
 import decode, { init as initDecode } from '@jsquash/avif/decode.js';
 import encode, { init as initEncode } from '@jsquash/avif/encode.js';
+import encodeSimd, {
+  init as initEncodeSimd,
+} from '@jsquash/avif/encode-simd.js';
 
 test('can successfully decode image', async (t) => {
   const [testImage, decodeWasmModule] = await Promise.all([
@@ -356,6 +359,43 @@ test('encodes lossless (YUV444) even with conflicting subsample option', async (
     decodedData.data,
     originalImageData.data,
     'Decoded data should match original even with conflicting subsample option',
+  );
+});
+
+// The single-variant entry point holds its own module, so it has to be given
+// the wasm separately from encode.js - Node cannot fetch() a file: URL.
+test('encode-simd.js encodes and round-trips through the decoder', async (t) => {
+  const [encodeWasmModule, decodeWasmModule] = await Promise.all([
+    importWasmModule('node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm'),
+    importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
+  ]);
+  await initEncodeSimd(encodeWasmModule);
+  initDecode(decodeWasmModule);
+
+  const originalImageData = {
+    width: 16,
+    height: 16,
+    data: new Uint8ClampedArray(4 * 16 * 16),
+    colorSpace: 'srgb' as const,
+  };
+  for (let i = 0; i < originalImageData.data.length; i += 4) {
+    originalImageData.data[i] = i % 256; // R
+    originalImageData.data[i + 1] = (i + 64) % 256; // G
+    originalImageData.data[i + 2] = (i + 128) % 256; // B
+    originalImageData.data[i + 3] = 255; // A
+  }
+
+  // Lossless so the round trip can be asserted exactly.
+  const encodedData = await encodeSimd(originalImageData, { lossless: true });
+  t.assert(encodedData instanceof ArrayBuffer);
+
+  const decodedData = decoded(await decode(encodedData));
+  t.is(decodedData.width, originalImageData.width);
+  t.is(decodedData.height, originalImageData.height);
+  t.deepEqual(
+    decodedData.data,
+    originalImageData.data,
+    'Decoded data should match what encode-simd.js produced',
   );
 });
 

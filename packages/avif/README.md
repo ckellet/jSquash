@@ -96,6 +96,43 @@ By default, the encode function will use a single thread to encode the image. If
 
 This will still only take effect in browsers and devices that support multithreading. If the browser does not support it, it will fallback to single threaded mode
 
+## Choosing a single encoder build
+
+The encoder ships as three WebAssembly builds — multithreaded, SIMD and
+baseline. `encode.js` picks between them at runtime, which is the right default
+but means a bundler following that dispatch sees all three and emits all three
+`.wasm` files, including the 3.3 MB multithreaded build that only loads on a
+cross-origin isolated page.
+
+If you already know what you are targeting, import one of the single-variant
+entry points instead. They take the same options, return the same thing, and
+export the same `init` and `dispose`; the only difference is that the build is
+chosen at import time, so you ship one binary.
+
+| Import | Build | Use when |
+| --- | --- | --- |
+| `@jsquash/avif/encode` | picked at runtime | You don't know the target, and don't mind shipping all three |
+| `@jsquash/avif/encode-simd` | SIMD | Node, Deno, Cloudflare Workers, or any browser page that isn't cross-origin isolated |
+| `@jsquash/avif/encode-mt` | multithreaded | A browser page you serve with the [cross-origin isolation headers](#activate-multithreading) |
+| `@jsquash/avif/encode-scalar` | baseline | You must support a runtime without WebAssembly SIMD |
+
+`encode-simd` is the one most projects want. WebAssembly SIMD is available in
+every browser these packages target as well as in Node, Deno and Cloudflare
+Workers, and none of those environments can use the multithreaded build unless
+you have set the isolation headers yourself.
+
+```js
+import encode, { init, dispose } from '@jsquash/avif/encode-simd';
+
+const avifBuffer = await encode(rawImageData);
+```
+
+Note these variants have no fallback. `encode-mt` will not load without
+`SharedArrayBuffer`, so only reach for it if you control the headers your page
+is served with — otherwise stay on `encode.js` or `encode-simd`.
+
+The decoder has only one build, so `decode.js` has no variants.
+
 ## Manual WASM initialisation (not recommended)
 
 In most situations there is no need to manually initialise the provided WebAssembly modules.
