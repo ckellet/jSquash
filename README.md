@@ -129,6 +129,17 @@ falls back to a binary with no SIMD either.
   `speed` setting (the win is largest at fast speeds, where the vectorisable
   transform kernels are a bigger share of the work). It costs +2.9 MB raw but
   only +110 KB brotli, because vectorised code compresses well.
+- **AVIF is pinned to libavif 1.0.1 / libaom 3.7.0, and that is deliberate.**
+  libavif 1.3.0 + libaom 3.12.1 was built and benchmarked, and it is not an
+  upgrade on these workloads: encode is ~18% slower at `speed: 8` and level
+  at `speed: 6`, for no measurable quality gain (identical SSIM, 0.4% larger
+  output). It does produce smaller binaries (encoder -4%, SIMD encoder -12%).
+  If it is revisited, note that libavif >= 1.1 replaced its boolean
+  dependency options with `LOCAL`/`SYSTEM`/`OFF`, so the build needs
+  `-DAVIF_CODEC_AOM=SYSTEM`, `-DAVIF_LIBYUV=OFF` and `-DAVIF_LIBSHARPYUV=SYSTEM`
+  with `AOM_LIBRARY`/`AOM_INCLUDE_DIR`/`LIBSHARPYUV_LIBRARY`/
+  `LIBSHARPYUV_INCLUDE_DIR` pointing at the trees we build. `AVIF_CODEC_AOM=1`
+  silently disables the codec on those versions.
 - **MozJPEG is pinned to 3.3.1 (2016).** Moving to 4.x means migrating the
   build from autotools to CMake, and would also make `--with-simd` available.
 
