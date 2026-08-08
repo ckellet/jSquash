@@ -54,6 +54,19 @@ cd bench && npm install && node bench.mjs --out baseline.json
   `WebAssembly.Module` explicitly. When a codec ships several builds the
   harness picks the one the runtime dispatch would choose - the SIMD variant
   where it exists, falling back otherwise.
-- Timings are the median of `--runs` samples. Close the rest of your machine
-  down before trusting small deltas, and never compare numbers taken while a
-  build is running.
+- Reported time is the **fastest** of `--runs` samples, taken after `--warmup`
+  untimed iterations (3 by default). Both matter:
+  - WebAssembly starts in V8's baseline compiler (Liftoff) and tiers up to
+    TurboFan only after a few executions. Timing from the first call mixes two
+    compilers into one distribution, which on its own can manufacture a swing
+    of 25% or more in either direction.
+  - Interference only ever makes a run slower, so the minimum is the closest
+    estimate of the true cost. The median is recorded alongside it, and a
+    spread above 1.25x is printed as a warning that the machine was not quiet.
+- The harness records load average and refuses to write an `--out` baseline
+  when the machine is oversubscribed. Sizes and SSIM stay valid under load;
+  only wall time does not.
+- SSIM here is computed on the luma plane. It is a good proxy for detail
+  retention and a poor one for colour: it cannot see chroma bleed, so it will
+  not show you what an option like WebP's `use_sharp_yuv` does. Measure chroma
+  separately if that is what you are changing.

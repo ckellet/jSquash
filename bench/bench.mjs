@@ -27,6 +27,7 @@ const flag = (name, fallback) => {
 };
 
 const RUNS = Number(flag('runs', 3));
+const WARMUP = Number(flag('warmup', 3));
 const [WIDTH, HEIGHT] = flag('size', '1024x768').split('x').map(Number);
 const FILTER = flag('filter', null)?.split(',').map((s) => s.trim());
 const OUT = flag('out', null);
@@ -65,32 +66,53 @@ const asImageData = (img) =>
     : img;
 
 async function time(fn) {
-  const samples = [];
+  // WebAssembly starts out in V8's baseline compiler (Liftoff) and only tiers
+  // up to TurboFan after a few executions. Timing from the very first call
+  // mixes two different compilers into one distribution, which is enough on
+  // its own to manufacture a swing of 25% or more in either direction.
   let last;
+  for (let i = 0; i < WARMUP; i += 1) {
+    last = await fn();
+  }
+
+  const samples = [];
   for (let i = 0; i < RUNS; i += 1) {
     const t0 = performance.now();
     last = await fn();
     samples.push(performance.now() - t0);
   }
   samples.sort((a, b) => a - b);
-  return { ms: samples[Math.floor(samples.length / 2)], value: last };
+
+  return {
+    // Interference only ever makes a run slower, never faster, so the fastest
+    // sample is the closest thing to the true cost. The median is kept
+    // alongside it because a large gap between the two is itself a signal
+    // that the machine was not quiet.
+    ms: samples[0],
+    medianMs: samples[Math.floor(samples.length / 2)],
+    value: last,
+  };
 }
 
 async function record(suite, name, fn, { bytes, quality } = {}) {
   try {
-    const { ms, value } = await time(fn);
+    const { ms, medianMs, value } = await time(fn);
     const row = {
       suite,
       name,
       ms: Number(ms.toFixed(2)),
+      medianMs: Number(medianMs.toFixed(2)),
       bytes: bytes ? bytes(value) : undefined,
       ssim: quality ? Number((await quality(value)).toFixed(5)) : undefined,
     };
     results.push(row);
     const size = row.bytes ? `${(row.bytes / 1024).toFixed(1)} KiB` : '';
     const q = row.ssim !== undefined ? `ssim ${row.ssim.toFixed(4)}` : '';
+    // A median far above the minimum means the samples were contended.
+    const spread = row.medianMs / row.ms;
+    const noisy = spread > 1.25 ? `  (median ${row.medianMs} ms, ${spread.toFixed(1)}x spread)` : '';
     console.log(
-      `  ${name.padEnd(30)} ${String(row.ms).padStart(9)} ms  ${size.padStart(11)}  ${q}`,
+      `  ${name.padEnd(30)} ${String(row.ms).padStart(9)} ms  ${size.padStart(11)}  ${q}${noisy}`,
     );
   } catch (err) {
     console.log(`  ${name.padEnd(30)} FAILED: ${err.message}`);
@@ -246,6 +268,8 @@ if (wanted('oxipng')) {
 const summary = {
   generatedWith: {
     runs: RUNS,
+    warmup: WARMUP,
+    metric: 'minimum of samples, after warmup',
     width: WIDTH,
     height: HEIGHT,
     node: process.version,
@@ -282,6 +306,11 @@ if (COMPARE) {
   if (base.generatedWith?.trustworthyTimings === false) {
     console.warn(
       `\n  !! ${COMPARE} was recorded on a busy machine; its times are not a valid baseline.`,
+    );
+  }
+  if (base.generatedWith?.warmup === undefined) {
+    console.warn(
+      `\n  !! ${COMPARE} predates warmup handling; its timings include V8 tier-up and are not comparable.`,
     );
   }
   if (base.generatedWith?.runs !== RUNS) {
