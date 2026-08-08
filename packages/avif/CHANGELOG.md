@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- ICC colour profile passthrough. Previously the profile was discarded on decode
+  and never written on encode, so a Display P3 or Adobe RGB image silently
+  round-tripped as if it were sRGB.
+    - `decodeWithMetadata` returns `{ image, metadata }`, where `metadata.icc`
+      holds the raw profile when the image carries one
+    - `readIccProfile` reads the profile without decoding any pixels - it parses
+      the container's boxes and stops
+    - `encode` accepts an `icc` option to embed a profile
+- `decode` and `encode` are unchanged for callers who do not ask for metadata.
+  Profiles are carried, never applied - see
+  [docs/colour-management.md](/docs/colour-management.md).
+
+### Changed
+
+- The encoder now takes its pixels through the wasm heap rather than embind's
+  `std::string` binding, which copied the input a byte at a time from JS. This
+  is internal to the package; `encode`'s signature is unchanged.
+
 ## @jsquash/avif@2.1.1
 
 ### Fixes

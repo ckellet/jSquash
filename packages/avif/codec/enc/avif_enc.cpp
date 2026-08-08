@@ -3,6 +3,8 @@
 #include <emscripten/val.h>
 #include "avif/avif.h"
 
+#include <stdint.h>
+#include <stdlib.h>
 #include <memory>
 #include <string>
 
@@ -55,7 +57,30 @@ struct AvifOptions {
 
 thread_local const val Uint8Array = val::global("Uint8Array");
 
-val encode(std::string buffer, int width, int height, AvifOptions options) {
+// Hand the caller a region of the wasm heap to write pixels into.
+//
+// Pixels used to arrive through embind's std::string binding, which copies a
+// typed array into the heap one byte at a time from JS. On a multi-megapixel
+// image that is tens of millions of individually bounds-checked writes before
+// the encoder even starts. Taking a pointer lets the caller use HEAPU8.set(),
+// which is a single memcpy.
+uintptr_t create_buffer(int size) {
+  return reinterpret_cast<uintptr_t>(malloc(size));
+}
+
+void destroy_buffer(uintptr_t pointer) {
+  free(reinterpret_cast<void*>(pointer));
+}
+
+// `icc`/`iccSize` are the raw ICC profile to attach, or nullptr/0 for none.
+// `encode` and `encode_with_icc` share this so the no-profile export keeps its
+// exact behaviour and does no extra work.
+static val encode_impl(uintptr_t pointer,
+                       int width,
+                       int height,
+                       AvifOptions options,
+                       const uint8_t* icc,
+                       size_t iccSize) {
   avifResult status;  // To check the return status for avif API's
 
   int depth = options.bitDepth;
@@ -96,11 +121,18 @@ val encode(std::string buffer, int width, int height, AvifOptions options) {
     image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT601;
   }
 
+  // Passthrough only: the profile describes the pixels as they already are,
+  // and libavif copies the bytes into the image, so the caller's buffer can go
+  // away afterwards.
+  if (icc != nullptr && iccSize > 0) {
+    status = avifImageSetProfileICC(image.get(), icc, iccSize);
+    RETURN_NULL_IF(status != AVIF_RESULT_OK);
+  }
+
   avifRGBImage srcRGB;
   avifRGBImageSetDefaults(&srcRGB, image.get());
 
-  uint8_t* rgba = reinterpret_cast<uint8_t*>(const_cast<char*>(buffer.data()));
-  srcRGB.pixels = rgba;
+  srcRGB.pixels = reinterpret_cast<uint8_t*>(pointer);
 
   if (depth > 8) {
     srcRGB.depth = depth;
@@ -168,6 +200,21 @@ val encode(std::string buffer, int width, int height, AvifOptions options) {
   return js_result;
 }
 
+val encode(uintptr_t pointer, int width, int height, AvifOptions options) {
+  return encode_impl(pointer, width, height, options, nullptr, 0);
+}
+
+val encode_with_icc(uintptr_t pointer,
+                    int width,
+                    int height,
+                    AvifOptions options,
+                    uintptr_t iccPointer,
+                    int iccSize) {
+  return encode_impl(pointer, width, height, options,
+                     reinterpret_cast<const uint8_t*>(iccPointer),
+                     static_cast<size_t>(iccSize));
+}
+
 EMSCRIPTEN_BINDINGS(my_module) {
   value_object<AvifOptions>("AvifOptions")
       .field("quality", &AvifOptions::quality)
@@ -184,4 +231,7 @@ EMSCRIPTEN_BINDINGS(my_module) {
       .field("bitDepth", &AvifOptions::bitDepth);
 
   function("encode", &encode);
+  function("encode_with_icc", &encode_with_icc);
+  function("create_buffer", &create_buffer);
+  function("destroy_buffer", &destroy_buffer);
 }
