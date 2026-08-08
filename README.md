@@ -12,7 +12,7 @@ jSquash name is inspired by jQuery and Squoosh. It symbolizes the browser suppor
 
 - The codecs and tools are built for both Web and Web Worker environments
 - No dynamic code execution, the packages can be run in strict environments that do not allow code evaluation. Like Cloudflare Workers.
-- Does not rely on TextEncoder/TextDecoder API (could reduce performance) but allows it to be run in simpler V8 runtimes that only support UTF-8 (Cloudflare Workers, Vercel Edge Functions etc.)
+- Does not require the TextEncoder/TextDecoder API. It is used where the runtime provides it, with a plain JS fallback where it does not, so the packages still run in simpler V8 runtimes (Cloudflare Workers, Vercel Edge Functions etc.)
 
 ## Packages
 

@@ -4,11 +4,17 @@ FROM emscripten/emsdk:${EMSDK_VERSION}
 
 ARG DEFAULT_CFLAGS="-O3 -flto"
 ARG DEFAULT_CXX_FLAGS="-std=c++17"
+# TEXTDECODER=1 uses TextDecoder where the runtime provides it and falls back
+# to plain JS where it does not, so the "runs in simpler V8 runtimes" property
+# is preserved. TEXTDECODER=0 was removed in Emscripten 4.x, which rejects it
+# with `#error "TEXTDECODER must be either 1 or 2"`, and it was blocking the
+# move to 4.0.16 - the first release published for arm64, and therefore the
+# first that does not run under QEMU emulation on Apple Silicon.
 ARG DEFAULT_EMSCRIPTEN_SETTINGS="\
 -s PTHREAD_POOL_SIZE=navigator.hardwareConcurrency \
 -s FILESYSTEM=0 \
 -s ALLOW_MEMORY_GROWTH=1 \
--s TEXTDECODER=0 \
+-s TEXTDECODER=1 \
 "
 
 RUN apt-get update && apt-get install -qqy autoconf libtool pkg-config
