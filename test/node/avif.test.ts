@@ -139,7 +139,7 @@ test('can successfully decode 10-bit image to 8-bit precision', async (t) => {
 
 test('can successfully encode image', async (t) => {
   const encodeWasmModule = await importWasmModule(
-    'node_modules/@jsquash/avif/codec/enc/avif_enc.wasm',
+    'node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm',
   );
   await initEncode(encodeWasmModule);
   const data = await encode({
@@ -153,7 +153,7 @@ test('can successfully encode image', async (t) => {
 
 test('can successfully encode 10-bit image', async (t) => {
   const encodeWasmModule = await importWasmModule(
-    'node_modules/@jsquash/avif/codec/enc/avif_enc.wasm',
+    'node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm',
   );
   await initEncode(encodeWasmModule);
   const data = await encode(
@@ -171,7 +171,7 @@ test('can successfully encode 10-bit image', async (t) => {
 
 test('can successfully encode 12-bit image', async (t) => {
   const encodeWasmModule = await importWasmModule(
-    'node_modules/@jsquash/avif/codec/enc/avif_enc.wasm',
+    'node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm',
   );
   await initEncode(encodeWasmModule);
   const data = await encode(
@@ -189,7 +189,7 @@ test('can successfully encode 12-bit image', async (t) => {
 
 test('throws error when encoding 10-bit image with non-Uint16Array data', async (t) => {
   const encodeWasmModule = await importWasmModule(
-    'node_modules/@jsquash/avif/codec/enc/avif_enc.wasm',
+    'node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm',
   );
   await initEncode(encodeWasmModule);
   const error = await t.throwsAsync(() =>
@@ -217,7 +217,7 @@ test('throws error when encoding 10-bit image with non-Uint16Array data', async 
 
 test('throws error when encoding 12-bit image with non-Uint16Array data', async (t) => {
   const encodeWasmModule = await importWasmModule(
-    'node_modules/@jsquash/avif/codec/enc/avif_enc.wasm',
+    'node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm',
   );
   await initEncode(encodeWasmModule);
   const error = await t.throwsAsync(() =>
@@ -244,7 +244,7 @@ test('throws error when encoding 12-bit image with non-Uint16Array data', async 
 
 test('can successfully encode and decode lossless image', async (t) => {
   const [encodeWasmModule, decodeWasmModule] = await Promise.all([
-    importWasmModule('node_modules/@jsquash/avif/codec/enc/avif_enc.wasm'),
+    importWasmModule('node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm'),
     importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
   ]);
   await initEncode(encodeWasmModule);
@@ -281,7 +281,7 @@ test('can successfully encode and decode lossless image', async (t) => {
 
 test('encodes lossless even with conflicting quality option', async (t) => {
   const [encodeWasmModule, decodeWasmModule] = await Promise.all([
-    importWasmModule('node_modules/@jsquash/avif/codec/enc/avif_enc.wasm'),
+    importWasmModule('node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm'),
     importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
   ]);
   await initEncode(encodeWasmModule);
@@ -319,7 +319,7 @@ test('encodes lossless even with conflicting quality option', async (t) => {
 
 test('encodes lossless (YUV444) even with conflicting subsample option', async (t) => {
   const [encodeWasmModule, decodeWasmModule] = await Promise.all([
-    importWasmModule('node_modules/@jsquash/avif/codec/enc/avif_enc.wasm'),
+    importWasmModule('node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm'),
     importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
   ]);
   await initEncode(encodeWasmModule);
@@ -361,7 +361,7 @@ test('encodes lossless (YUV444) even with conflicting subsample option', async (
 
 test('throws error for invalid bitDepth setting', async (t) => {
   const encodeWasmModule = await importWasmModule(
-    'node_modules/@jsquash/avif/codec/enc/avif_enc.wasm',
+    'node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm',
   );
   await initEncode(encodeWasmModule);
 

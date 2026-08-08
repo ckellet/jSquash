@@ -90,10 +90,13 @@ the default; a codec that needs something else sets `EMSDK_VERSION` in its own
 
 | Codec | Emscripten | Notes |
 | --- | --- | --- |
-| jpeg | 4.0.16 | First release published for arm64, so it builds natively rather than under emulation |
-| webp, qoi | 3.1.57 | |
-| avif | 3.1.57 | Built `-Oz`; see below |
+| jpeg, webp, avif | 4.0.16 | Built natively on arm64; see below |
+| qoi | 3.1.57 | |
 | jxl | 2.0.34 | Not yet verified on a newer toolchain |
+
+4.0.16 is the first Emscripten release published for arm64. Earlier tags are
+amd64 only and run under emulation on Apple Silicon, which costs roughly an
+order of magnitude on a build the size of libaom.
 
 Rust codecs build through `tools/build-rust.sh`, which pins the image in
 `tools/rust.Dockerfile` and compiles with `-C target-feature=+simd128`.
@@ -114,11 +117,29 @@ falls back to a binary with no SIMD either.
 
 ### Known trade-offs
 
-- **AVIF is compiled `-Oz`.** The encoder is already 3.4 MB per variant, so it
-  is built for size, which costs encode speed. Moving to `-O2` is worth
-  measuring with `npm run bench` if encode time matters more than payload.
+- **AVIF is compiled `-Oz`, and that is not a speed compromise.** Measured on
+  the bench fixture, `-Oz`, `-O2` and `-O3` encode within 1.5% of each other -
+  inside run-to-run noise - while `-O2`/`-O3` add ~8% to the binary. libaom's
+  hot loops are memory-bound and already hand-tuned, so the extra inlining
+  buys nothing. `-Oz` is the best point on the curve, not a trade-off.
 - **libaom is built with `AOM_TARGET_CPU=generic`**, so AVIF gets no
-  hand-written SIMD - only whatever the compiler autovectorises.
+  hand-written SIMD - only whatever the compiler autovectorises. That turns
+  out to be a lot: the SIMD encoder build carries ~465k v128 instructions
+  against zero in the plain build, and encodes 4-11% faster depending on the
+  `speed` setting (the win is largest at fast speeds, where the vectorisable
+  transform kernels are a bigger share of the work). It costs +2.9 MB raw but
+  only +110 KB brotli, because vectorised code compresses well.
+- **AVIF is pinned to libavif 1.0.1 / libaom 3.7.0, and that is deliberate.**
+  libavif 1.3.0 + libaom 3.12.1 was built and benchmarked, and it is not an
+  upgrade on these workloads: encode is ~18% slower at `speed: 8` and level
+  at `speed: 6`, for no measurable quality gain (identical SSIM, 0.4% larger
+  output). It does produce smaller binaries (encoder -4%, SIMD encoder -12%).
+  If it is revisited, note that libavif >= 1.1 replaced its boolean
+  dependency options with `LOCAL`/`SYSTEM`/`OFF`, so the build needs
+  `-DAVIF_CODEC_AOM=SYSTEM`, `-DAVIF_LIBYUV=OFF` and `-DAVIF_LIBSHARPYUV=SYSTEM`
+  with `AOM_LIBRARY`/`AOM_INCLUDE_DIR`/`LIBSHARPYUV_LIBRARY`/
+  `LIBSHARPYUV_INCLUDE_DIR` pointing at the trees we build. `AVIF_CODEC_AOM=1`
+  silently disables the codec on those versions.
 - **MozJPEG is built twice, in two SIMD configurations.** Its hand-written
   SIMD comes in an x86 flavour, which is NASM and cannot be assembled for
   wasm, and an Arm Neon flavour, which is plain C intrinsics and reaches wasm

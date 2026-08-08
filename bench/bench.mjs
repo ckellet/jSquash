@@ -204,8 +204,9 @@ const CODECS = [
   },
   {
     suite: 'avif', spec: '@jsquash/avif', opts: { quality: 50, speed: 8 },
-    // Node takes the single-threaded branch.
-    enc: ['@jsquash/avif/codec/enc/avif_enc.wasm'],
+    // Node has no threads but does have SIMD, so the dispatch picks the SIMD
+    // build; fall back to the plain one if it has not been built.
+    enc: ['@jsquash/avif/codec/enc/avif_enc_simd.wasm', '@jsquash/avif/codec/enc/avif_enc.wasm'],
     dec: ['@jsquash/avif/codec/dec/avif_dec.wasm'],
   },
   {
