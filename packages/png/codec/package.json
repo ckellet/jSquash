@@ -1,7 +1,7 @@
 {
   "name": "squoosh-png",
   "scripts": {
-    "build": "../../../tools/build-rust.sh && npm run patch-pre-script",
-    "patch-pre-script": "cat pre.js >> pkg/squoosh_png.js"
+    "build": "../../../tools/build-rust.sh && npm run patch-glue",
+    "patch-glue": "node ../../../tools/patch-wasm-glue.mjs pkg/squoosh_png.js pre.js"
   }
 }
