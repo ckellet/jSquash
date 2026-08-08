@@ -138,6 +138,17 @@ binaries where the addition rounds to zero.
 
 ### JPEG — MozJPEG 3.3.1
 
+> **Superseded.** This section assessed MozJPEG 3.3.1. The package has since
+> moved to **4.1.5**, where `jcicc.c` and `jdicc.c` are present and already
+> compiled into `libjpeg.a` — they were simply unreachable. The hand-rolled
+> chunking described below was not needed: the implementation uses
+> `jpeg_write_icc_profile`, `jpeg_save_markers` and `jpeg_read_icc_profile`.
+> Measured cost: encoder **+946 B**, decoder **+4.7 KB** (of which 1,570 B is a
+> setjmp guard, since libjpeg's default error handler calls `exit()` and would
+> take the whole wasm module with it on a malformed file). EXIF did fall out
+> free, as predicted. The original assessment is kept below as a record.
+
+
 ICC in JPEG lives in APP2 markers prefixed `ICC_PROFILE\0`, **split across
 multiple markers** (each capped near 65533 bytes) with a 1-byte sequence number
 and 1-byte count. Reading means reassembling; writing means chunking.
@@ -165,6 +176,19 @@ Surfacing those bytes costs almost nothing, and JPEG is the format where EXIF
 actually matters.
 
 ### WebP — libwebp (pinned commit, 1.1.0 era)
+
+> **Superseded.** This section assessed a 1.1.0-era libwebp. The package has
+> since moved to **1.6.0**, where upstream added a first-class
+> `WEBP_BUILD_LIBWEBPMUX` option that defaults ON and is independent of
+> `WEBP_BUILD_GIF2WEBP`/`WEBP_BUILD_IMG2WEBP`. Both `libwebpmux.a` and
+> `libwebpdemux.a` were already being built and merely not linked, so **no
+> cmake change was needed** — only the link lines. Measured cost, read and
+> write attributable separately because read lands only on the decoder and
+> write only on the encoder: **+4.1 KB / +4.2 KB** on the two decoders,
+> **+10.1 KB / +11.1 KB** on the two encoders. Both below the 10-30 KB
+> estimate, so neither direction was deferred. The original assessment is kept
+> below as a record.
+
 
 The only package where **payload is a real question**, because WebP metadata
 lives in RIFF chunks that the core codec API cannot see. `WebPEncode` and
@@ -432,6 +456,24 @@ never a CMM per codec.
 
 Phases 2-5 are independent of each other and can be done in any order or in
 parallel; only the shared type shape from phase 1 couples them.
+
+## Implementation status
+
+| Package | ICC read | ICC write | EXIF read | Measured cost |
+| --- | --- | --- | --- | --- |
+| png | yes | yes | no | +5.0 KB |
+| webp | yes | yes | no | +4.1 KB read, +10.1 KB write |
+| jpeg | yes | yes | **yes** | +946 B enc, +4.7 KB dec |
+| avif | yes | yes | no | +224 B |
+| jxl | see below | see below | no | — |
+
+Verified end to end across packages: a profile read from a PNG survives
+byte-identically through WebP, JPEG and AVIF encoders, and a profile recovered
+from a WebP file can be re-embedded in a JPEG. That portability is the reason
+the `ImageMetadata` shape is shared rather than per-package.
+
+Encoding without a profile produces byte-identical output to before in every
+package, so the common path is unaffected in both speed and result.
 
 ## What was implemented for PNG
 
