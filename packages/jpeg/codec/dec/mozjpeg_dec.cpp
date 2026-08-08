@@ -1,6 +1,8 @@
 #include <emscripten/bind.h>
 #include <emscripten/val.h>
 #include "jpeglib.h"
+#include <setjmp.h>
+#include <stdlib.h>
 #include <string.h>
 #include <vector>
 
@@ -11,10 +13,22 @@ extern "C" {
 
 using namespace emscripten;
 
+thread_local const val Uint8Array = val::global("Uint8Array");
 thread_local const val Uint8ClampedArray = val::global("Uint8ClampedArray");
 thread_local const val ImageData = val::global("ImageData");
 
 constexpr uint16_t EXIF_ORIENTATION_TAG = 0x0112;
+
+/** APP1 carries EXIF, APP2 carries the ICC profile. */
+constexpr int EXIF_MARKER = JPEG_APP0 + 1;
+constexpr int ICC_MARKER = JPEG_APP0 + 2;
+
+/**
+ * EXIF payloads sit behind an "Exif\0\0" prefix inside APP1. The canonical
+ * jSquash shape starts at the TIFF header, so the prefix is stripped on the way
+ * out and callers get the same bytes they would from any other container.
+ */
+constexpr unsigned int EXIF_PREFIX_LEN = 6;
 
 inline uint16_t get_exif_short(const uint8_t *data, int offset, bool is_motorola)
 {
@@ -76,9 +90,9 @@ int extract_orientation(struct jpeg_decompress_struct *cinfo)
 {
   for (jpeg_saved_marker_ptr marker = cinfo->marker_list; marker != nullptr; marker = marker->next)
   {
-    if (marker->marker == JPEG_APP0 + 1 &&
-        marker->data_length >= 6 &&
-        memcmp(marker->data, "Exif\0\0", 6) == 0)
+    if (marker->marker == EXIF_MARKER &&
+        marker->data_length >= EXIF_PREFIX_LEN &&
+        memcmp(marker->data, "Exif\0\0", EXIF_PREFIX_LEN) == 0)
     {
 
       int orient = parse_exif_orientation(
@@ -159,7 +173,55 @@ void apply_orientation(uint8_t *buffer, int width, int height, int orientation)
   std::memcpy(buffer, rotated.data(), dst_width * dst_height * 4);
 }
 
-val decode(std::string image_in, bool preserve_orientation)
+/**
+ * Collect the metadata the file carried alongside its pixels.
+ *
+ * Must run while the decompressor is alive: `marker_list` lives in its memory
+ * pool and dies with `jpeg_destroy_decompress`. Both payloads are copied into
+ * JS here rather than referenced, for that reason.
+ *
+ * Metadata is advisory, so nothing in here fails an image. MozJPEG's
+ * `jpeg_read_icc_profile` returns FALSE for an absent profile and equally for a
+ * malformed one - inconsistent marker counts, gaps in the sequence, empty
+ * markers - and either way the field is simply left off.
+ */
+val extract_metadata(struct jpeg_decompress_struct *cinfo)
+{
+  val metadata = val::object();
+
+  JOCTET *icc_data = nullptr;
+  unsigned int icc_len = 0;
+  if (jpeg_read_icc_profile(cinfo, &icc_data, &icc_len) && icc_len > 0)
+  {
+    metadata.set("icc", Uint8Array.new_(typed_memory_view(icc_len, icc_data)));
+  }
+  // jdicc.c allocates with plain malloc and documents the caller as the owner.
+  free(icc_data);
+
+  for (jpeg_saved_marker_ptr marker = cinfo->marker_list; marker != nullptr; marker = marker->next)
+  {
+    if (marker->marker == EXIF_MARKER &&
+        marker->data_length > EXIF_PREFIX_LEN &&
+        memcmp(marker->data, "Exif\0\0", EXIF_PREFIX_LEN) == 0)
+    {
+      metadata.set("exif", Uint8Array.new_(typed_memory_view(
+                               marker->data_length - EXIF_PREFIX_LEN,
+                               marker->data + EXIF_PREFIX_LEN)));
+      break;
+    }
+  }
+
+  return metadata;
+}
+
+/**
+ * The body shared by `decode` and `decode_with_metadata`.
+ *
+ * `metadata_out` is filled only when it is non-null, so the plain decode path
+ * neither asks the library to save APP2 markers nor walks the marker list. It
+ * runs exactly the code it ran before this function existed.
+ */
+val decode_impl(const std::string &image_in, bool preserve_orientation, val *metadata_out)
 {
   const uint8_t *image_buffer = reinterpret_cast<const uint8_t *>(image_in.c_str());
 
@@ -169,8 +231,17 @@ val decode(std::string image_in, bool preserve_orientation)
   jpeg_create_decompress(&cinfo);
 
   jpeg_mem_src(&cinfo, image_buffer, image_in.length());
-  jpeg_save_markers(&cinfo, JPEG_APP0 + 1, 0xFFFF);
+  jpeg_save_markers(&cinfo, EXIF_MARKER, 0xFFFF);
+  if (metadata_out != nullptr)
+  {
+    jpeg_save_markers(&cinfo, ICC_MARKER, 0xFFFF);
+  }
   jpeg_read_header(&cinfo, TRUE);
+
+  if (metadata_out != nullptr)
+  {
+    *metadata_out = extract_metadata(&cinfo);
+  }
 
   int orientation = preserve_orientation ? extract_orientation(&cinfo) : 1;
 
@@ -207,6 +278,109 @@ val decode(std::string image_in, bool preserve_orientation)
   return result;
 }
 
+val decode(std::string image_in, bool preserve_orientation)
+{
+  return decode_impl(image_in, preserve_orientation, nullptr);
+}
+
+/**
+ * Decode pixels and return them together with the file's ICC profile and EXIF.
+ *
+ * One pass rather than two: the markers are saved during the same
+ * `jpeg_read_header` the pixels need anyway, so metadata costs a marker copy
+ * and nothing more. Reading the file a second time would mean re-parsing it.
+ */
+val decode_with_metadata(std::string image_in, bool preserve_orientation)
+{
+  val metadata = val::object();
+  val image = decode_impl(image_in, preserve_orientation, &metadata);
+
+  val result = val::object();
+  result.set("image", image);
+  result.set("metadata", metadata);
+  return result;
+}
+
+/**
+ * An error manager that reports failures by unwinding instead of exiting.
+ *
+ * libjpeg's default `error_exit` calls `exit()`, which in wasm tears the whole
+ * module down - fine for a decode that a caller already expects to succeed, but
+ * not for `read_icc_profile`, whose entire job is to be pointed at an arbitrary
+ * file and asked a question about it. The instrumentation setjmp costs is
+ * confined to this one function; the decode path above is untouched.
+ */
+struct icc_error_mgr
+{
+  struct jpeg_error_mgr pub;
+  jmp_buf setjmp_buffer;
+};
+
+METHODDEF(void)
+icc_error_exit(j_common_ptr cinfo)
+{
+  longjmp(reinterpret_cast<icc_error_mgr *>(cinfo->err)->setjmp_buffer, 1);
+}
+
+/** Warnings about a profile we are only peeking at are noise, not diagnostics. */
+METHODDEF(void)
+icc_emit_message(j_common_ptr cinfo, int msg_level) {}
+
+/**
+ * Read the ICC profile without decoding any pixels.
+ *
+ * Stops after the header, which is all the markers need, so asking "what colour
+ * space is this file in?" does not cost a full decode. Returns `undefined` for
+ * a file with no profile, a profile that does not reassemble, and input that is
+ * not a JPEG at all - metadata is advisory in every one of those cases.
+ */
+val read_icc_profile(std::string image_in)
+{
+  jpeg_decompress_struct cinfo;
+  icc_error_mgr jerr;
+
+  // volatile because a longjmp out of the guarded region would otherwise leave
+  // these indeterminate: locals modified between setjmp and longjmp may live in
+  // registers that longjmp does not restore.
+  JOCTET *volatile icc_data = nullptr;
+  unsigned int volatile icc_len = 0;
+
+  cinfo.err = jpeg_std_error(&jerr.pub);
+  jerr.pub.error_exit = icc_error_exit;
+  jerr.pub.emit_message = icc_emit_message;
+  jpeg_create_decompress(&cinfo);
+
+  if (setjmp(jerr.setjmp_buffer) == 0)
+  {
+    jpeg_mem_src(&cinfo,
+                 reinterpret_cast<const uint8_t *>(image_in.c_str()),
+                 image_in.length());
+    jpeg_save_markers(&cinfo, ICC_MARKER, 0xFFFF);
+    jpeg_read_header(&cinfo, TRUE);
+
+    JOCTET *data = nullptr;
+    unsigned int length = 0;
+    if (jpeg_read_icc_profile(&cinfo, &data, &length))
+    {
+      icc_data = data;
+      icc_len = length;
+    }
+  }
+
+  val result = val::undefined();
+  if (icc_data != nullptr && icc_len > 0)
+  {
+    result = Uint8Array.new_(typed_memory_view(icc_len, icc_data));
+  }
+
+  free(icc_data);
+  jpeg_destroy_decompress(&cinfo);
+
+  return result;
+}
+
 EMSCRIPTEN_BINDINGS(my_module) {
   function("decode", &decode);
+  function("decode_with_metadata", &decode_with_metadata);
+  function("read_icc_profile", &read_icc_profile);
 }

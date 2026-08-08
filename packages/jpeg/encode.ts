@@ -16,16 +16,18 @@
  * Updated to support a partial subset of Jpeg encoding options to be provided.
  * The jpeg options are defaulted to defaults from the meta.ts file.
  */
-import type { EncodeOptions } from './meta.js';
+import type { IccProfileInput, JpegEncodeOptions } from './meta.js';
 import type { MozJPEGModule } from './codec/enc/mozjpeg_enc.js';
 
 import mozjpeg_enc from './codec/enc/mozjpeg_enc.js';
-import { defaultOptions } from './meta.js';
+import { defaultOptions, toIccProfileBytes } from './meta.js';
 import {
   disposeEmscriptenModule,
   initEmscriptenModule,
   withPixelBuffer,
 } from './utils.js';
+
+export type { IccProfileInput, JpegEncodeOptions };
 
 let emscriptenModule: Promise<MozJPEGModule> | undefined;
 
@@ -69,15 +71,33 @@ export function dispose(): void {
 
 export default async function encode(
   data: ImageData,
-  options: Partial<EncodeOptions> = {},
+  options: Partial<JpegEncodeOptions> = {},
 ): Promise<ArrayBuffer> {
+  // `icc` is jSquash's own option rather than a MozJPEG parameter, so it is
+  // separated out before the rest cross the embind boundary. Validated up here
+  // so a bad profile is a caller error that costs nothing: it throws before the
+  // module is awaited and before a pixel is copied anywhere.
+  const { icc: iccInput, ...encodeOptions } = options;
+  const icc = iccInput === undefined ? undefined : toIccProfileBytes(iccInput);
+
   if (!emscriptenModule) emscriptenModule = init();
 
   const module = await emscriptenModule;
-  const _options = { ...defaultOptions, ...options };
+  const _options = { ...defaultOptions, ...encodeOptions };
 
   const resultView = withPixelBuffer(module, data.data, (pointer) =>
-    module.encode(pointer, data.width, data.height, _options),
+    icc === undefined
+      ? module.encode(pointer, data.width, data.height, _options)
+      : withPixelBuffer(module, icc, (iccPointer) =>
+          module.encode_with_icc_profile(
+            pointer,
+            data.width,
+            data.height,
+            _options,
+            iccPointer,
+            icc.byteLength,
+          ),
+        ),
   );
 
   if (!resultView) throw new Error('Encoding error.');

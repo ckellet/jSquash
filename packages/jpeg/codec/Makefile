@@ -116,11 +116,19 @@ $(AUTOVEC_BUILD)/libjpeg.a: $(CODEC_DIR)/CMakeLists.txt
 
 # MozJPEG has no wasm SIMD support of its own; see wasm-simd.patch for what the
 # patch does and why.
+#
+# The final touch is load-bearing. tar restores the tarball's own mtimes, and
+# MozJPEG 4.1.5 stamps CMakeLists.txt in 2023, so without it this target is
+# permanently older than its prerequisite and re-runs on every build. That
+# rm -rf then deletes archives make has already stat'd and believes are current,
+# so the second build of a tree links against libjpeg.a files that are no longer
+# there. Stamping the extracted tree makes the fetch happen once.
 $(CODEC_DIR)/CMakeLists.txt: wasm-simd.patch
 	rm -rf $(CODEC_DIR)
 	mkdir -p $(CODEC_DIR)
 	curl -sL $(CODEC_URL) | tar xz --strip 1 -C $(CODEC_DIR)
 	cd $(CODEC_DIR) && patch -p1 < $(CURDIR)/wasm-simd.patch
+	touch $(CODEC_DIR)/CMakeLists.txt
 
 clean:
 	$(RM) $(OUT_JS) $(OUT_WASM)
