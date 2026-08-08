@@ -12,8 +12,12 @@
 import type { AVIFModule } from './codec/enc/avif_enc.js';
 import type { EncodeOptions, ImageData16bit } from './meta.js';
 
-import { defaultOptions } from './meta.js';
-import { disposeEmscriptenModule, initEmscriptenModule } from './utils.js';
+import { defaultOptions, toIccProfileBytes } from './meta.js';
+import {
+  disposeEmscriptenModule,
+  initEmscriptenModule,
+  withPixelBuffer,
+} from './utils.js';
 
 /** Resolves the Emscripten factory for whichever build was selected. */
 export type CodecLoader = () => Promise<
@@ -115,18 +119,37 @@ export function createEncoder(loadCodec: CodecLoader) {
       _options.subsample = 3;
     }
 
+    // Validated on this side of the boundary so the error names the actual
+    // problem, and thrown before any encoding work is done. Kept out of the
+    // no-profile path so that call stays exactly what it was.
+    const icc =
+      _options.icc === undefined ? undefined : toIccProfileBytes(_options.icc);
+
     const module = await emscriptenModule;
-    const output = module.encode(
-      // `data` may be a view into a larger buffer, so the offset and length
-      // have to be carried across rather than reading `.buffer` wholesale.
-      new Uint8Array(
-        data.data.buffer,
-        data.data.byteOffset,
-        data.data.byteLength,
-      ),
-      data.width,
-      data.height,
-      _options,
+
+    // `data` may be a view into a larger buffer, so the offset and length have
+    // to be carried across rather than reading `.buffer` wholesale. Going via
+    // byteLength rather than the element count is also what makes this work
+    // for both depths: 4 bytes per pixel at 8-bit, 8 at 10/12-bit.
+    const pixels = new Uint8Array(
+      data.data.buffer,
+      data.data.byteOffset,
+      data.data.byteLength,
+    );
+
+    const output = withPixelBuffer(module, pixels, (pointer) =>
+      icc === undefined
+        ? module.encode(pointer, data.width, data.height, _options)
+        : withPixelBuffer(module, icc, (iccPointer) =>
+            module.encode_with_icc(
+              pointer,
+              data.width,
+              data.height,
+              _options,
+              iccPointer,
+              icc.byteLength,
+            ),
+          ),
     );
 
     if (!output) {

@@ -85,6 +85,47 @@ const rawImageData = await loadImage('/example.png');
 const avifBuffer = await encode(rawImageData, { lossless: true });
 ```
 
+## Colour profiles
+
+`decode` returns pixels in the file's **own** colour space and `encode` writes
+them unchanged. jSquash carries ICC profiles, it does not apply them — so a
+Display P3 image decodes to P3 numbers, not sRGB ones, and it is the caller's
+job to interpret or convert them. See [`docs/colour-management.md`](../../docs/colour-management.md).
+
+`ImageData` cannot carry a profile, so the profile is surfaced through separate
+functions rather than by changing what `decode` returns.
+
+### decodeWithMetadata(data: ArrayBuffer, options?): Promise<DecodedImage>
+
+As `decode`, but resolves to `{ image, metadata }`. `metadata.icc` is a
+`Uint8Array` holding the raw profile, and is **absent** when the file carries
+none. The wrapper shape is the same at every bit depth.
+
+### readIccProfile(data: ArrayBuffer): Promise<Uint8Array | undefined>
+
+The profile on its own, without decoding any pixels — this parses the
+container's boxes and stops. Resolves to `undefined` when there is no profile,
+or when the file cannot be parsed: metadata is advisory and never throws.
+
+### encode(data, { icc })
+
+`icc` accepts a `Uint8Array`, `ArrayBuffer` or any `ArrayBufferView`. Omit it
+and the output carries no profile, exactly as before. Unlike the read side, a
+malformed profile here is a caller error and throws before any encoding starts.
+
+```js
+import { decodeWithMetadata, encode } from '@jsquash/avif';
+
+const { image, metadata } = await decodeWithMetadata(avifBuffer);
+// Re-encode at a lower quality, keeping the colour space intact.
+const smaller = await encode(image, { quality: 40, icc: metadata.icc });
+```
+
+The payload is raw and unparsed in both directions, so a profile jSquash does
+not understand still survives a round trip. Profiles are portable across the
+jSquash codecs — one read from `@jsquash/png` can be handed straight to this
+encoder.
+
 ## Activate Multithreading
 
 By default, the encode function will use a single thread to encode the image. If you want to speed this up you can enable multithreading with the following.
