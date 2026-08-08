@@ -99,6 +99,43 @@ const image = await fetch('./image.webp').then(res => res.arrayBuffer()).then(de
 
 See [jSquash Project README](https://github.com/jamsinclair/jSquash#known-issues)
 
+## Sharp YUV, and when to turn it on
+
+`use_sharp_yuv` is off by default, matching libwebp and `cwebp` upstream. It is
+worth turning on for **text, UI and screenshot content**, and generally not
+worth it for photographs.
+
+WebP stores chroma at half resolution (4:2:0). Sharp YUV uses a better
+downsampling filter, which markedly reduces colour bleed on saturated edges —
+red text on white being the classic case.
+
+Measured on this repository's benchmark fixtures:
+
+| content | encode time | size | luma SSIM | chroma RMSE |
+| --- | --- | --- | --- | --- |
+| photographic | +9% | +3.6% | -0.005 | **-14%** |
+| red text on white | +30% | +9.5% | -0.009 | **-34%** |
+
+The reason it earns its place is that **raising quality does not fix colour
+bleed**. On the red-on-white fixture, sharp YUV at quality 75 produces a 67.4 KB
+file; plain YUV needs quality 81 to reach that same size, and at that size its
+chroma error is *worse* than plain YUV at quality 75 (RMSE 7.20 vs 4.67).
+The bleed comes from the chroma downsample, not from quantisation, so no amount
+of quality budget removes it — only a better downsample does.
+
+It is off by default because it is a genuine trade rather than a free win: at
+equal file size it spends bytes on chroma that would otherwise go to luma
+detail, and for general-purpose encoding luma is the better default. Enabling it
+also costs 10-30% encode time and 4-10% size at fixed quality.
+
+```js
+// Worth it for a screenshot or a UI mock
+await encode(imageData, { quality: 75, use_sharp_yuv: 1 });
+```
+
+Note that the SSIM figure reported by `npm run bench` is luma-only and by
+construction cannot see what this option does.
+
 ## Releasing memory
 
 WebAssembly heaps grow but never shrink. A long-lived Worker, Cloudflare
