@@ -12,21 +12,18 @@
  */
 
 /**
- * Notice: I (Jamie Sinclair) have modified this file.
- * Updated to support a partial subset of WebP encoding options to be provided.
- * The WebP options are defaulted to defaults from the meta.ts file.
- * Also manually allow instantiation of the Wasm Module.
+ * WebP encoder bound to the SIMD build.
+ *
+ * Same API as './encode.js', but without the runtime feature check, so only
+ * webp_enc_simd.wasm is referenced and a bundler emits one binary instead of
+ * two. WebAssembly SIMD is available in every browser these packages target,
+ * as well as Node, Deno and Cloudflare Workers - if you need to support a
+ * runtime without it, use './encode.js' or './encode-scalar.js'.
  */
-import { simd } from 'wasm-feature-detect';
+import codec from './codec/enc/webp_enc_simd.js';
 import { createEncoder } from './encode-core.js';
 
-// Picks a build at runtime, which is why a bundler pulling this in emits both
-// .wasm files. Import './encode-simd.js' instead to commit to one.
-const { init, dispose, encode } = createEncoder(async () =>
-  (await simd())
-    ? (await import('./codec/enc/webp_enc_simd.js')).default
-    : (await import('./codec/enc/webp_enc.js')).default,
-);
+const { init, dispose, encode } = createEncoder(async () => codec);
 
 export { init, dispose };
 export default encode;

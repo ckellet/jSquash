@@ -12,20 +12,13 @@
  */
 
 /**
- * Notice: I (Jamie Sinclair) have modified this file to accept an ArrayBuffer
- * instead of a typed array, and to allow manual instantiation of the module.
+ * WebP decoder bound to the SIMD build. See './encode-simd.js' for the
+ * rationale; decoding benefits from SIMD more than encoding does.
  */
-import { simd } from 'wasm-feature-detect';
+import codec from './codec/dec/webp_dec_simd.js';
 import { createDecoder } from './decode-core.js';
 
-// libwebp's decode path has SIMD implementations of the transforms and colour
-// conversion. Import './decode-simd.js' to commit to that build and avoid
-// shipping the baseline one alongside it.
-const { init, dispose, decode } = createDecoder(async () =>
-  (await simd())
-    ? (await import('./codec/dec/webp_dec_simd.js')).default
-    : (await import('./codec/dec/webp_dec.js')).default,
-);
+const { init, dispose, decode } = createDecoder(async () => codec);
 
 export { init, dispose };
 export default decode;
