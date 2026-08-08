@@ -116,26 +116,32 @@ falls back to a binary with no SIMD either.
 
 ### Known trade-offs
 
-- **The wasm payload grew from 15.0 MB to 24.2 MB, and 27% of it is
-  thread-only.** The SIMD variants that made AVIF and JXL two to three times
-  faster are not free, and it is worth knowing where the weight sits:
+- **The wasm payload grew from 15.0 MB to 24.2 MB, and single-variant entry
+  points are how you avoid paying for it.** The SIMD builds that made AVIF and
+  JXL two to three times faster are not free, and 6.5 MB of the total is
+  threaded builds that need `SharedArrayBuffer` - so they can never load under
+  Node, Deno, Cloudflare Workers, or any page without COOP/COEP headers.
 
-  | | size | usable in |
-  | --- | --- | --- |
-  | `avif_enc_mt.wasm` | 3.36 MB | cross-origin-isolated browsers only |
-  | `jxl_enc_mt_simd.wasm` | 1.80 MB | cross-origin-isolated browsers only |
-  | `jxl_enc_mt.wasm` | 1.33 MB | cross-origin-isolated browsers only |
+  `encode`/`decode` choose a build at runtime, which is the right default but
+  means a bundler emits every candidate. Each codec now also exposes entry
+  points bound to a single build, so an application that knows its target
+  ships one binary. Same API, same options, same `dispose()`:
 
-  Threads need `SharedArrayBuffer`, so under Node, Deno, Cloudflare Workers or
-  any page without COOP/COEP headers, those 6.5 MB can never be loaded. They
-  are downloaded on `npm install` and may be emitted as assets by a bundler
-  regardless. Compression helps delivery a lot - vectorised code is repetitive,
-  and the AVIF SIMD encoder is +2.9 MB raw for +110 KB brotli - but it does not
-  help install size or bundler output.
+  ```js
+  import encode from '@jsquash/avif/encode';        // bundles all three builds
+  import encode from '@jsquash/avif/encode-simd';   // bundles one
+  ```
 
-  The fix is subpath exports, so a consumer can depend on a single variant
-  instead of the runtime dispatch pulling in all of them. That is a public API
-  change and has not been done here.
+  For a Node or Workers deployment using AVIF, JXL and WebP, that is **19.95 MB
+  of wasm down to 8.41 MB**. See each package's README for the full list;
+  `-simd` suits anything current, `-mt` a cross-origin-isolated browser, and
+  `-scalar` a runtime without SIMD.
+
+  The installed size is unchanged - every variant is still on disk after
+  `npm install`, because the runtime dispatch has to be able to reach them.
+  Only what reaches a bundle changes. Trimming the install too would need an
+  `exports` map, which is exhaustive and would break existing deep imports, so
+  it has deliberately not been added.
 
 - **AVIF is compiled `-Oz`, and that is not a speed compromise.** Measured on
   the bench fixture, `-Oz`, `-O2` and `-O3` encode within 1.5% of each other -
