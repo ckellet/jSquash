@@ -21,12 +21,12 @@ fn srgb_converter_funcs(with_space_conversion: bool) -> (fn(u8) -> f32, fn(f32) 
     if with_space_conversion {
         (
             |v| SRGB_TO_LINEAR_LUT[v as usize],
-            |v| (linear_to_srgb(v) * 255.0).clamp(0.0, 255.0) as u8,
+            |v| (linear_to_srgb(v) * 255.0).round().clamp(0.0, 255.0) as u8,
         )
     } else {
         (
             |v| (v as f32) / 255.0,
-            |v| (v * 255.0).clamp(0.0, 255.0) as u8,
+            |v| (v * 255.0).round().clamp(0.0, 255.0) as u8,
         )
     }
 }
