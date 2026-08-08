@@ -34,6 +34,19 @@ export interface MozJPEGModule extends EmscriptenWasm.Module {
     height: number,
     options: EncodeOptions,
   ): Uint8Array;
+  /**
+   * As `encode`, plus an ICC profile written into APP2 markers. The profile
+   * arrives through the same heap as the pixels, so `iccPointer` must come from
+   * `create_buffer`.
+   */
+  encode_with_icc_profile(
+    pointer: number,
+    width: number,
+    height: number,
+    options: EncodeOptions,
+    iccPointer: number,
+    iccLength: number,
+  ): Uint8Array;
 }
 
 declare var moduleFactory: EmscriptenWasm.ModuleFactory<MozJPEGModule>;

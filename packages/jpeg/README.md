@@ -72,6 +72,66 @@ const rawImageData = await loadImage('/example.png');
 const jpegBuffer = await encode(rawImageData);
 ```
 
+## Colour profiles (ICC) and metadata
+
+`decode` returns pixels in the file's **own** colour space, not sRGB. A Display
+P3 or Adobe RGB JPEG - which is what most modern phone cameras produce - decodes
+to the numbers that were in the file; what those numbers mean is described by
+the image's embedded ICC profile.
+
+This package **carries profiles, it does not apply them**. It will not transform
+pixels between colour spaces - use a colour management library, or the browser's
+own (a `canvas` created with the right `colorSpace`, or `createImageBitmap`), if
+you need that. Before this API existed the profile was discarded on decode and
+never written on encode, so a wide-gamut image silently round-tripped as if it
+were sRGB and came out desaturated in any colour-managed viewer.
+
+See [docs/colour-management.md](/docs/colour-management.md) for the full design.
+
+### decodeWithMetadata(data: ArrayBuffer, options?: DecodeOptions): Promise<DecodedImage>
+
+Like `decode`, but returns the image together with its embedded metadata:
+
+```ts
+{ image: ImageData, metadata: { icc?: Uint8Array, exif?: Uint8Array } }
+```
+
+`metadata.icc` holds the raw profile reassembled from the `ICC_PROFILE\0` APP2
+markers. `metadata.exif` holds the raw APP1 payload starting at the TIFF header,
+with JPEG's `Exif\0\0` prefix stripped, so it is the same shape any EXIF parser
+expects. Both are absent when the file carries nothing, and both are unparsed -
+the orientation tag `preserveOrientation` acts on is in there along with
+everything else the camera wrote.
+
+`decode` is unchanged and still resolves to a plain `ImageData` you can put
+straight on a canvas. Metadata lives on a separate function precisely so that
+signature never changes.
+
+### readIccProfile(data: ArrayBuffer): Promise<Uint8Array | undefined>
+
+Reads the profile **without decoding any pixels** - parsing stops after the JPEG
+header, which is where the APP2 markers already are. Use this to ask "what
+colour space is this file in?" cheaply. Resolves to `undefined` when there is no
+profile, when the profile is present but does not reassemble, and when the input
+is not a JPEG at all; metadata never throws.
+
+### encode(data, options?: { ...EncodeOptions, icc?: Uint8Array | ArrayBuffer })
+
+Pass `icc` to embed a profile in APP2 markers. Omit it and the output carries no
+profile, exactly as before - byte for byte the same file. The pixels are written
+unchanged, so the profile must be the one they are already in.
+
+```js
+import { decodeWithMetadata, encode } from '@jsquash/jpeg';
+
+const { image, metadata } = await decodeWithMetadata(await file.arrayBuffer());
+// ... resize, filter, whatever - as long as you do not change colour space
+const output = await encode(image, { quality: 80, icc: metadata.icc });
+```
+
+An `icc` value that is not a plausible ICC profile throws before any encoding
+work happens.
+
 ## Manual WASM initialisation (not recommended)
 
 In most situations there is no need to manually initialise the provided WebAssembly modules.

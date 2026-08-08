@@ -73,7 +73,11 @@ void destroy_buffer(uintptr_t pointer) {
   free(reinterpret_cast<void*>(pointer));
 }
 
-val encode(uintptr_t pointer, int image_width, int image_height, MozJpegOptions opts) {
+// The body shared by `encode` and `encode_with_icc_profile`. `icc_data` is null
+// on the common path, so an encode without a profile writes no extra marker and
+// runs exactly the code it ran before.
+val encode_impl(uintptr_t pointer, int image_width, int image_height, MozJpegOptions opts,
+                const JOCTET* icc_data, unsigned int icc_len) {
   uint8_t* image_buffer = reinterpret_cast<uint8_t*>(pointer);
 
   // The code below is basically the `write_JPEG_file` function from
@@ -194,6 +198,15 @@ val encode(uintptr_t pointer, int image_width, int image_height, MozJpegOptions 
    */
   jpeg_start_compress(&cinfo, TRUE);
 
+  /* The ICC profile goes in APP2 markers, which the spec wants immediately
+   * after APP0/APP1 - so directly after jpeg_start_compress and before any
+   * scanline. jpeg_write_icc_profile does the splitting across markers and the
+   * "ICC_PROFILE\0" sequence headers; MozJPEG 4.x ships it in jcicc.c.
+   */
+  if (icc_data != nullptr && icc_len > 0) {
+    jpeg_write_icc_profile(&cinfo, icc_data, icc_len);
+  }
+
   /* Step 5: while (scan lines remain to be written) */
   /*           jpeg_write_scanlines(...); */
 
@@ -231,6 +244,20 @@ val encode(uintptr_t pointer, int image_width, int image_height, MozJpegOptions 
   return js_result;
 }
 
+val encode(uintptr_t pointer, int image_width, int image_height, MozJpegOptions opts) {
+  return encode_impl(pointer, image_width, image_height, opts, nullptr, 0);
+}
+
+// The profile arrives through the same create_buffer/destroy_buffer heap region
+// the pixels use, rather than through embind's std::string binding, so no part
+// of the encoder's input is copied a byte at a time from JS.
+val encode_with_icc_profile(uintptr_t pointer, int image_width, int image_height,
+                            MozJpegOptions opts, uintptr_t icc_pointer, int icc_len) {
+  return encode_impl(pointer, image_width, image_height, opts,
+                     reinterpret_cast<const JOCTET*>(icc_pointer),
+                     static_cast<unsigned int>(icc_len));
+}
+
 EMSCRIPTEN_BINDINGS(my_module) {
   value_object<MozJpegOptions>("MozJpegOptions")
       .field("quality", &MozJpegOptions::quality)
@@ -252,6 +279,7 @@ EMSCRIPTEN_BINDINGS(my_module) {
 
   function("version", &version);
   function("encode", &encode);
+  function("encode_with_icc_profile", &encode_with_icc_profile);
   function("create_buffer", &create_buffer);
   function("destroy_buffer", &destroy_buffer);
 }

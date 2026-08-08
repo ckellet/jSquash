@@ -21,6 +21,9 @@ import { disposeEmscriptenModule, initEmscriptenModule } from './utils.js';
 
 import mozjpeg_dec from './codec/dec/mozjpeg_dec.js';
 import { DecodeOptions, defaultDecodeOptions } from './meta.js';
+import type { DecodedImage, ImageMetadata } from './meta.js';
+
+export type { DecodedImage, ImageMetadata };
 
 let emscriptenModule: Promise<MozJPEGModule> | undefined;
 
@@ -73,4 +76,60 @@ export default async function decode(
   const result = module.decode(buffer, _options.preserveOrientation);
   if (!result) throw new Error('Decoding error');
   return result;
+}
+
+/**
+ * Decode an image and return it together with its embedded metadata.
+ *
+ * Separate from `decode` rather than an option on it because it returns
+ * something else. Switching a return type on a flag makes the common call -
+ * `const image = await decode(buf)` - depend on a value TypeScript can only
+ * narrow when the flag is a literal, so anyone building an options object
+ * dynamically ends up with a union to unpick. `decode` stays exactly as it was,
+ * and callers who want metadata reach for a different name.
+ *
+ * Both the ICC profile (APP2) and the raw EXIF payload (APP1) come back, in the
+ * same pass that decodes the pixels. Fields are absent rather than empty when
+ * the file carried nothing, so `if (metadata.icc)` is the natural test.
+ */
+export async function decodeWithMetadata(
+  buffer: ArrayBuffer,
+  options: Partial<DecodeOptions> = {},
+): Promise<DecodedImage<ImageData>> {
+  if (!emscriptenModule) emscriptenModule = init();
+
+  const _options = { ...defaultDecodeOptions, ...options };
+  const module = await emscriptenModule;
+  const result = module.decode_with_metadata(
+    buffer,
+    _options.preserveOrientation,
+  );
+  if (!result) throw new Error('Decoding error');
+
+  const metadata: ImageMetadata = {};
+  if (result.metadata.icc) metadata.icc = result.metadata.icc;
+  if (result.metadata.exif) metadata.exif = result.metadata.exif;
+
+  return { image: result.image, metadata };
+}
+
+/**
+ * Read an image's ICC profile without decoding any pixels.
+ *
+ * Stops after the JPEG header, which is where the APP2 markers already are, so
+ * asking what colour space a file is in does not cost a full decode.
+ *
+ * Returns `undefined` when the image carries no profile, when the profile is
+ * there but does not reassemble, and when the input is not a JPEG at all -
+ * metadata is advisory, and a file whose pixels decode perfectly well should
+ * not fail over a malformed ancillary marker.
+ */
+export async function readIccProfile(
+  buffer: ArrayBuffer,
+): Promise<Uint8Array | undefined> {
+  if (!emscriptenModule) emscriptenModule = init();
+
+  const module = await emscriptenModule;
+  const icc = module.read_icc_profile(buffer);
+  return icc && icc.length > 0 ? icc : undefined;
 }
