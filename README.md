@@ -90,7 +90,8 @@ the default; a codec that needs something else sets `EMSDK_VERSION` in its own
 
 | Codec | Emscripten | Notes |
 | --- | --- | --- |
-| webp, jpeg, qoi | 3.1.57 | |
+| jpeg | 4.0.16 | First release published for arm64, so it builds natively rather than under emulation |
+| webp, qoi | 3.1.57 | |
 | avif | 3.1.57 | Built `-Oz`; see below |
 | jxl | 2.0.34 | Not yet verified on a newer toolchain |
 
@@ -118,8 +119,13 @@ falls back to a binary with no SIMD either.
   measuring with `npm run bench` if encode time matters more than payload.
 - **libaom is built with `AOM_TARGET_CPU=generic`**, so AVIF gets no
   hand-written SIMD - only whatever the compiler autovectorises.
-- **MozJPEG is pinned to 3.3.1 (2016).** Moving to 4.x means migrating the
-  build from autotools to CMake, and would also make `--with-simd` available.
+- **MozJPEG is built twice, in two SIMD configurations.** Its hand-written
+  SIMD comes in an x86 flavour, which is NASM and cannot be assembled for
+  wasm, and an Arm Neon flavour, which is plain C intrinsics and reaches wasm
+  through the SIMDe `<arm_neon.h>` Emscripten ships. SIMDe has to emulate the
+  de-interleaving loads and stores, which pays off in the encoder but not in
+  the decoder, so the encoder links the Neon build and the decoder links an
+  autovectorised-only one. `packages/jpeg/codec/Makefile` has the numbers.
 
 ## Known Issues
 

@@ -5,7 +5,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "config.h"
 #include "jpeglib.h"
 
 extern "C" {
@@ -17,6 +16,8 @@ using namespace emscripten;
 // MozJPEG doesn’t expose a numeric version, so I have to do some fun C macro
 // hackery to turn it into a string. More details here:
 // https://gcc.gnu.org/onlinedocs/cpp/Stringizing.html
+// MOZJPEG_VERSION comes from the Makefile: 4.x dropped the generated config.h
+// that used to define it.
 #define xstr(s) str(s)
 #define str(s) #s
 

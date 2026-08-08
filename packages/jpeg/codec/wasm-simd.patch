@@ -1,0 +1,108 @@
+Build MozJPEG's Arm Neon SIMD extensions for WebAssembly.
+Applies to MozJPEG 4.1.5. Everything above the first "---" is ignored by patch(1).
+
+MozJPEG ships hand-written SIMD in two flavours. The x86 one is NASM assembly
+and cannot be assembled for wasm at all. The Arm Neon one is plain C
+intrinsics, and Emscripten ships a SIMDe-based <arm_neon.h> that lowers those
+intrinsics to wasm SIMD128 - so that flavour can be built, and this patch is
+what makes MozJPEG's build system agree to do it.
+
+Three changes:
+
+1. simd/CMakeLists.txt gains an Emscripten branch. Emscripten reports itself
+   to CMake as 32-bit x86, so without this the x86 branch is selected and SIMD
+   is silently disabled for want of NASM. The new branch names the Neon
+   sources explicitly and takes the intrinsics implementation rather than the
+   GAS one, which is Arm assembly.
+
+   It uses the AArch32 variants deliberately: __aarch64__ is undefined here,
+   so jchuff.h picks a 32-bit bit buffer to match a 32-bit size_t, and the
+   #ifdefs inside the shared sources select their AArch32 branches to match.
+
+2. simd/arm/jchuff.h has an SPLAT() that stores four bytes using an inline
+   "str" instruction. wasm has no inline assembler, so it takes the portable
+   byte-at-a-time store that the MSVC build already uses.
+
+3. simd/arm/aarch32/jsimd.c decides at run time whether Neon is available, by
+   reading /proc/cpuinfo. There is no /proc under wasm, and SIMD128 is a
+   compile-time target feature in any case: if the translation unit compiled,
+   the intrinsics are there. Without this the SIMD kernels build but are never
+   dispatched to, which looks exactly like a working build that is mysteriously
+   no faster.
+
+--- a/simd/CMakeLists.txt
++++ b/simd/CMakeLists.txt
+@@ -6,8 +6,46 @@
+     set(WITH_SIMD 0 PARENT_SCOPE)
+   endif()
+ endmacro()
++
++
++###############################################################################
++# WebAssembly (Neon intrinsics via Emscripten's SIMDe-based <arm_neon.h>)
++###############################################################################
++
++# Emscripten reports itself to CMake as a 32-bit x86 target, so the block below
++# would otherwise pick the x86 path and disable SIMD for want of NASM. The x86
++# SIMD extensions are hand-written NASM and cannot be assembled for wasm, but
++# the Neon extensions are plain C intrinsics, and Emscripten ships a SIMDe
++# <arm_neon.h> that lowers them to wasm SIMD128. So we build the Neon sources.
++#
++# We use the AArch32 variants deliberately. __aarch64__ is undefined here, so
++# jchuff.h picks BIT_BUF_SIZE 32, which is what a 32-bit size_t wants, and the
++# per-file #ifdefs inside the shared sources select their AArch32 branches to
++# match. Sizes and code paths are then consistent throughout.
++if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
++
++set(HAVE_VLD1_S16_X3 1)
++set(HAVE_VLD1_U16_X2 1)
++set(HAVE_VLD1Q_U8_X4 1)
++configure_file(arm/neon-compat.h.in arm/neon-compat.h @ONLY)
++include_directories(${CMAKE_CURRENT_BINARY_DIR}/arm)
++
++# The GAS implementation is Arm assembly; only the intrinsics are portable.
++set(NEON_INTRINSICS 1 CACHE INTERNAL "" FORCE)
++add_definitions(-DNEON_INTRINSICS)
++
++add_library(simd OBJECT
++  arm/jccolor-neon.c arm/jcgray-neon.c arm/jcphuff-neon.c arm/jcsample-neon.c
++  arm/jdcolor-neon.c arm/jdmerge-neon.c arm/jdsample-neon.c
++  arm/jfdctfst-neon.c arm/jfdctint-neon.c arm/jidctfst-neon.c
++  arm/jidctint-neon.c arm/jidctred-neon.c arm/jquanti-neon.c
++  arm/aarch32/jchuff-neon.c arm/aarch32/jsimd.c)
++
++return()
+ 
++endif()
+ 
++
+ ###############################################################################
+ # x86[-64] (NASM)
+ ###############################################################################
+--- a/simd/arm/jchuff.h
++++ b/simd/arm/jchuff.h
+@@ -74,7 +74,9 @@
+ 
+ #else
+ 
+-#if defined(_MSC_VER) && !defined(__clang__)
++/* wasm has no inline assembler, so it takes the portable byte-at-a-time
++   store below rather than the Arm "str" variant. */
++#if (defined(_MSC_VER) && !defined(__clang__)) || defined(__wasm__)
+ #define SPLAT() { \
+   buffer[0] = (JOCTET)(put_buffer >> 24); \
+   buffer[1] = (JOCTET)(put_buffer >> 16); \
+--- a/simd/arm/aarch32/jsimd.c
++++ b/simd/arm/aarch32/jsimd.c
+@@ -112,7 +112,10 @@
+ 
+   simd_support = 0;
+ 
+-#if defined(__ARM_NEON__)
++/* wasm SIMD128 is a compile-time target feature, not something to probe for
++   at run time, and there is no /proc/cpuinfo to fall back on. If this
++   translation unit was built at all, the intrinsics are available. */
++#if defined(__ARM_NEON__) || defined(__wasm__)
+   simd_support |= JSIMD_NEON;
+ #elif defined(__linux__) || defined(ANDROID) || defined(__ANDROID__)
+   /* We still have a chance to use Neon regardless of globally used
