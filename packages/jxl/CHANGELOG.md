@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Changes
+
+- Encoding is substantially faster on large images. Pixels now reach the wasm
+  heap through a pointer and a single `HEAPU8.set()` rather than embind's
+  `std::string` binding, which copied the typed array a byte at a time from JS.
+  `encode()`'s signature is unchanged.
+
+### Adds
+
+- `decodeWithMetadata(data)` returns `{ image, metadata }`. `metadata.icc` is
+  the profile describing the **returned pixels**, which for JXL is always sRGB
+  because the decoder converts. `decode()` is unchanged.
+- `readIccProfile(data)` returns the profile the **file** declares, without
+  decoding pixels, or `undefined`. This is the source colour space, and is
+  deliberately a separate call from the one that hands back pixels.
+
+  See the Colour profiles section of the README for why the two differ.
+
 ## @jsquash/jxl@1.3.0
 
 ### Adds

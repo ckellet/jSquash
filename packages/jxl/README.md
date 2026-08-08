@@ -153,6 +153,39 @@ initJXLDecode(null, {
 const image = await fetch('./image.jxl').then(res => res.arrayBuffer()).then(decode);
 ```
 
+## Colour profiles
+
+JXL is the one codec in this library whose decoder **converts**. libjxl hands
+back the image in whatever colour space it picked, and this package transforms
+that to sRGB with skcms before the pixels cross the wasm boundary. So:
+
+- **`decode()` always returns sRGB pixels.** Unchanged, and unchanged by
+  anything below.
+- **`decodeWithMetadata(data)`** returns `{ image, metadata }`, where
+  `metadata.icc` is the profile describing **the pixels you were handed** —
+  which for JXL is always sRGB, because that is what they are. It is
+  deliberately *not* the source profile: attaching that to already-converted
+  pixels would claim, say, Display P3 for numbers that are no longer P3, which
+  is worse than attaching nothing.
+- **`readIccProfile(data)`** returns the profile the **file** declares, without
+  decoding any pixels, or `undefined`. This is the honest answer to "what
+  colour space was this image authored in?", and because it never travels
+  attached to pixels it cannot mislabel any.
+
+```js
+import decode, { decodeWithMetadata, readIccProfile } from '@jsquash/jxl/decode';
+
+const buf = await fetch('./image.jxl').then((r) => r.arrayBuffer());
+
+const sourceSpace = await readIccProfile(buf);      // what the file says
+const { image, metadata } = await decodeWithMetadata(buf); // metadata.icc is sRGB
+```
+
+`encode()` has no `icc` option: the glue does not use libjxl's public
+`JxlEncoder*` API and writes `jxl::ColorEncoding::SRGB` unconditionally. See
+`docs/colour-management.md`. `metadata.exif` is never populated — that needs
+`JXL_DEC_BOX`.
+
 ## Known Issues
 
 See [jSquash Project README](https://github.com/jamsinclair/jSquash#known-issues)

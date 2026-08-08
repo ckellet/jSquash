@@ -1,6 +1,9 @@
 #include <emscripten/bind.h>
 #include <emscripten/val.h>
 
+#include <stdint.h>
+#include <stdlib.h>
+
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
@@ -30,7 +33,22 @@ struct JXLOptions {
   bool lossyModular;
 };
 
-val encode(std::string image, int width, int height, JXLOptions options) {
+// Hand the caller a region of the wasm heap to write pixels into.
+//
+// Pixels used to arrive through embind's std::string binding, which copies a
+// typed array into the heap one byte at a time from JS. On a multi-megapixel
+// image that is tens of millions of individually bounds-checked writes before
+// the encoder even starts. Taking a pointer lets the caller use HEAPU8.set(),
+// which is a single memcpy.
+uintptr_t create_buffer(int size) {
+  return reinterpret_cast<uintptr_t>(malloc(size));
+}
+
+void destroy_buffer(uintptr_t pointer) {
+  free(reinterpret_cast<void*>(pointer));
+}
+
+val encode(uintptr_t pointer, int width, int height, JXLOptions options) {
   jxl::CompressParams cparams;
   jxl::PassesEncoderState passes_enc_state;
   jxl::CodecInOut io;
@@ -101,10 +119,13 @@ val encode(std::string image, int width, int height, JXLOptions options) {
     return val::null();
   }
 
-  uint8_t* inBuffer = (uint8_t*)image.c_str();
+  // RGBA8, so four bytes a pixel. The caller owns the allocation and is
+  // responsible for it being at least this large; `io.metadata.size.Set` above
+  // has already rejected dimensions that cannot describe an image.
+  const size_t in_size = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
 
   auto result = jxl::ConvertFromExternal(
-      jxl::Span<const uint8_t>(reinterpret_cast<const uint8_t*>(image.data()), image.size()), width,
+      jxl::Span<const uint8_t>(reinterpret_cast<const uint8_t*>(pointer), in_size), width,
       height, jxl::ColorEncoding::SRGB(/*is_gray=*/false), /*has_alpha=*/true,
       /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/8, /*endiannes=*/JXL_LITTLE_ENDIAN,
       /*flipped_y=*/false, pool_ptr, main, /*(only true if bits_per_sample==32) float_in=*/false);
@@ -134,4 +155,6 @@ EMSCRIPTEN_BINDINGS(my_module) {
       .field("epf", &JXLOptions::epf);
 
   function("encode", &encode);
+  function("create_buffer", &create_buffer);
+  function("destroy_buffer", &destroy_buffer);
 }
