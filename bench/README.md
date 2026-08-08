@@ -44,6 +44,35 @@ cd /tmp/jsquash-baseline && npm install && npx turbo run build
 cd bench && npm install && node bench.mjs --out baseline.json
 ```
 
+## Comparing two builds under load (`ab.mjs`)
+
+`bench.mjs` measures one build at a time, so a fair before/after needs a quiet
+machine. When you cannot have one — parallel codec builds, a shared box —
+use the interleaved comparison instead:
+
+```sh
+node ab.mjs --codec qoi --a /path/to/old/dist --b /path/to/new/dist
+node ab.mjs --codec webp --a ../a --b ../b --op decode --runs 40
+```
+
+It alternates between the two builds trial by trial inside one process, so
+drift, thermal throttling and background load hit both arms equally and mostly
+cancel out of the difference. Both arms are warmed up first, and which arm goes
+first alternates each round.
+
+`--a` and `--b` are **built package directories** — what `npm run build` leaves
+in `packages/<codec>/dist` — not bare `.wasm` files. Emscripten 4.x renamed
+embind's internals, so glue and binary have to be compared as a pair; loading a
+4.x `.wasm` with 3.x glue fails on missing symbols.
+
+Its noise floor is measured rather than assumed: comparing a build against
+itself reports 0.1%.
+
+One trap when preparing the two arms: `npx turbo run build` is cached, and will
+happily restore a `dist` from a previous state rather than rebuilding. Build
+each arm directly (`cd packages/<codec> && npm run build`) or you may end up
+comparing a binary with itself without noticing.
+
 ## Notes
 
 - The source image is generated from a seeded PRNG rather than committed as a
