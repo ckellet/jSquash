@@ -103,3 +103,27 @@ const image = await fetch('./image.jpeg').then(res => res.arrayBuffer()).then(de
 ## Known Issues
 
 See [jSquash Project README](https://github.com/jamsinclair/jSquash#known-issues)
+
+## Releasing memory
+
+WebAssembly heaps grow but never shrink. A long-lived Worker, Cloudflare
+isolate or Node process that has handled one large image keeps that peak
+allocation for the rest of its life, even while idle.
+
+`dispose()` drops the module so its memory can be garbage collected. The next
+call re-instantiates it on demand, so this is a trade of latency for residency
+rather than a teardown you can never come back from.
+
+```js
+import { encode, decode, dispose } from '@jsquash/jpeg';
+
+const output = await encode(imageData);
+dispose(); // release both the encoder and decoder
+
+// Or release just one side:
+import { disposeEncoder, disposeDecoder } from '@jsquash/jpeg';
+disposeEncoder();
+```
+
+Only call it once outstanding work has settled - any typed array still
+pointing into the old heap is detached.

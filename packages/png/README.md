@@ -112,3 +112,24 @@ import decode, { init as initPngDecode } from '@jsquash/png/decode';
 initPngDecode(WASM_MODULE); // The `WASM_MODULE` variable will need to be sourced by yourself and passed as an ArrayBuffer.
 const image = await fetch('./image.png').then(res => res.arrayBuffer()).then(decode);
 ```
+
+## Releasing memory
+
+WebAssembly heaps grow but never shrink. A long-lived Worker, Cloudflare
+isolate or Node process that has handled one large image keeps that peak
+allocation for the rest of its life, even while idle.
+
+`dispose()` drops the module so its memory can be garbage collected. The next
+call re-instantiates it on demand.
+
+```js
+import { encode, dispose } from '@jsquash/png';
+
+const output = await encode(imageData);
+dispose();
+```
+
+Only call it once outstanding work has settled - any typed array still
+pointing into the old heap is detached.
+
+The encoder and decoder share one module, so `dispose()` affects both.

@@ -16,28 +16,17 @@
  * and modified it to decode PNG images.
  */
 
-import type {
-  ImageDataRGBA16,
-  InitInput,
-  InitOutput as PngModule,
-} from './codec/pkg/squoosh_png.js';
-import initPngModule, {
+import type { ImageDataRGBA16 } from './codec/pkg/squoosh_png.js';
+import {
   decode as pngDecodeWasm,
   decode_rgba16 as pngDecodeRgba16Wasm,
 } from './codec/pkg/squoosh_png.js';
+import { init, dispose } from './init.js';
 
-let pngModule: Promise<PngModule>;
+export { init, dispose };
 
 export interface DecodeOptions {
   bitDepth?: 8 | 16;
-}
-
-export async function init(moduleOrPath?: InitInput): Promise<PngModule> {
-  if (!pngModule) {
-    pngModule = initPngModule(moduleOrPath);
-  }
-
-  return pngModule;
 }
 
 export async function decode(

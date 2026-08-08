@@ -1,5 +1,6 @@
 #include <emscripten/bind.h>
 #include <emscripten/val.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdexcept>
@@ -13,8 +14,23 @@ int version() {
 
 thread_local const val Uint8Array = val::global("Uint8Array");
 
-val encode(std::string img, int width, int height, WebPConfig config) {
-  auto img_in = (uint8_t*)img.c_str();
+// Hand the caller a region of the wasm heap to write pixels into.
+//
+// Pixels used to arrive through embind's std::string binding, which copies a
+// typed array into the heap one byte at a time from JS. On a multi-megapixel
+// image that is tens of millions of individually bounds-checked writes and it
+// dominates encode time. Taking a pointer lets the caller use HEAPU8.set(),
+// which is a single memcpy.
+uintptr_t create_buffer(int size) {
+  return reinterpret_cast<uintptr_t>(malloc(size));
+}
+
+void destroy_buffer(uintptr_t pointer) {
+  free(reinterpret_cast<void*>(pointer));
+}
+
+val encode(uintptr_t pointer, int width, int height, WebPConfig config) {
+  auto img_in = reinterpret_cast<uint8_t*>(pointer);
 
   // A lot of this is duplicated from Encode in picture_enc.c
   WebPPicture pic;
@@ -82,4 +98,6 @@ EMSCRIPTEN_BINDINGS(my_module) {
 
   function("version", &version);
   function("encode", &encode);
+  function("create_buffer", &create_buffer);
+  function("destroy_buffer", &destroy_buffer);
 }

@@ -21,10 +21,14 @@ import type { WebPModule } from './codec/enc/webp_enc.js';
 import type { EncodeOptions } from './meta.js';
 
 import { defaultOptions } from './meta.js';
-import { initEmscriptenModule } from './utils.js';
+import {
+  disposeEmscriptenModule,
+  initEmscriptenModule,
+  withPixelBuffer,
+} from './utils.js';
 import { simd } from 'wasm-feature-detect';
 
-let emscriptenModule: Promise<WebPModule>;
+let emscriptenModule: Promise<WebPModule> | undefined;
 
 export async function init(
   moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
@@ -43,22 +47,36 @@ export async function init(
     actualOptions = module as unknown as Partial<EmscriptenWasm.ModuleOpts>;
   }
 
-  if (await simd()) {
-    const webpEncoder = await import('./codec/enc/webp_enc_simd.js');
-    emscriptenModule = initEmscriptenModule(
+  // Assign synchronously, before the first await. Callers are documented to
+  // be able to fire init(module) without awaiting it, and two concurrent
+  // calls must share one module rather than each building their own - both
+  // of which stop working the moment this function awaits before assigning.
+  emscriptenModule = (async () => {
+    const webpEncoder = (await simd())
+      ? await import('./codec/enc/webp_enc_simd.js')
+      : await import('./codec/enc/webp_enc.js');
+
+    return initEmscriptenModule(
       webpEncoder.default,
       actualModule,
       actualOptions,
     );
-    return emscriptenModule;
-  }
-  const webpEncoder = await import('./codec/enc/webp_enc.js');
-  emscriptenModule = initEmscriptenModule(
-    webpEncoder.default,
-    actualModule,
-    actualOptions,
-  );
+  })();
+
   return emscriptenModule;
+}
+
+/**
+ * Release the module so its WebAssembly.Memory can be garbage collected.
+ *
+ * Emscripten heaps grow but never shrink, so a long-lived worker that has
+ * encoded a single large image holds that peak allocation for the rest of
+ * its life. The next call re-instantiates the module on demand.
+ */
+export function dispose(): void {
+  const pending = emscriptenModule;
+  emscriptenModule = undefined;
+  disposeEmscriptenModule(pending);
 }
 
 export default async function encode(
@@ -69,7 +87,10 @@ export default async function encode(
 
   const _options: EncodeOptions = { ...defaultOptions, ...options };
   const module = await emscriptenModule;
-  const result = module.encode(data.data, data.width, data.height, _options);
+
+  const result = withPixelBuffer(module, data.data, (pointer) =>
+    module.encode(pointer, data.width, data.height, _options),
+  );
 
   if (!result) throw new Error('Encoding error.');
 

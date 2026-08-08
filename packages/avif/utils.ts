@@ -40,3 +40,29 @@ export function initEmscriptenModule<T extends EmscriptenWasm.Module>(
     ...moduleOptionOverrides,
   });
 }
+
+/**
+ * Drop a cached module so its WebAssembly.Memory can be garbage collected.
+ *
+ * Emscripten heaps grow but never shrink, so a long-lived worker that has
+ * processed a single large image holds that peak allocation for the rest of
+ * its life. Any threads the module spawned hold a reference to that memory
+ * too, so they have to be torn down before it can be reclaimed.
+ */
+export function disposeEmscriptenModule(
+  modulePromise: Promise<EmscriptenWasm.Module> | undefined,
+): void {
+  if (!modulePromise) return;
+
+  void modulePromise.then(
+    (module) => {
+      const pthread = (
+        module as { PThread?: { terminateAllThreads?: () => void } }
+      ).PThread;
+      pthread?.terminateAllThreads?.();
+    },
+    () => {
+      // The module never instantiated, so there is nothing to tear down.
+    },
+  );
+}

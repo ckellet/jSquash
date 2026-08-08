@@ -20,16 +20,27 @@ import type { InitInput } from './codec/pkg/squoosh_oxipng.js';
 import { defaultOptions, OptimiseOptions } from './meta.js';
 import { threads } from 'wasm-feature-detect';
 
+/**
+ * wasm-bindgen-rayon spawns one Worker per thread up front and keeps them for
+ * the module's lifetime. Past a handful of threads a single image sees little
+ * further benefit, while the memory and startup cost keep growing, so the pool
+ * is capped rather than tracking core count on large machines.
+ */
+const MAX_THREADS = 8;
+
 async function initMT(moduleOrPath?: InitInput) {
   const {
     default: init,
     initThreadPool,
     optimise,
     optimise_raw,
+    dispose: disposeWasm,
   } = await import('./codec/pkg-parallel/squoosh_oxipng.js');
   await init(moduleOrPath);
-  await initThreadPool(globalThis.navigator.hardwareConcurrency);
-  return { optimise, optimise_raw };
+  await initThreadPool(
+    Math.min(globalThis.navigator.hardwareConcurrency, MAX_THREADS),
+  );
+  return { optimise, optimise_raw, disposeWasm };
 }
 
 async function initST(moduleOrPath?: InitInput) {
@@ -37,12 +48,13 @@ async function initST(moduleOrPath?: InitInput) {
     default: init,
     optimise,
     optimise_raw,
+    dispose: disposeWasm,
   } = await import('./codec/pkg/squoosh_oxipng.js');
   await init(moduleOrPath);
-  return { optimise, optimise_raw };
+  return { optimise, optimise_raw, disposeWasm };
 }
 
-let wasmReady: ReturnType<typeof initMT | typeof initST>;
+let wasmReady: ReturnType<typeof initMT | typeof initST> | undefined;
 
 export async function init(
   moduleOrPath?: InitInput,
@@ -65,6 +77,25 @@ export async function init(
   }
 
   return wasmReady;
+}
+
+/**
+ * Release the module so its WebAssembly.Memory can be garbage collected.
+ *
+ * Only call this once outstanding work has settled. On the threaded build the
+ * rayon worker pool is not torn down, so memory is only fully reclaimed once
+ * those workers are gone too.
+ */
+export function dispose(): void {
+  const pending = wasmReady;
+  wasmReady = undefined;
+
+  void pending?.then(
+    ({ disposeWasm }) => disposeWasm(),
+    () => {
+      // Never instantiated, so there is nothing to tear down.
+    },
+  );
 }
 
 export default async function optimise(

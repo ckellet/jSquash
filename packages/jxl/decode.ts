@@ -17,9 +17,9 @@
  */
 
 import jxlDecoder, { JXLModule } from './codec/dec/jxl_dec.js';
-import { initEmscriptenModule } from './utils.js';
+import { disposeEmscriptenModule, initEmscriptenModule } from './utils.js';
 
-let emscriptenModule: Promise<JXLModule>;
+let emscriptenModule: Promise<JXLModule> | undefined;
 
 export async function init(
   moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
@@ -44,6 +44,19 @@ export async function init(
     actualOptions,
   );
   return emscriptenModule;
+}
+
+/**
+ * Release the module so its WebAssembly.Memory can be garbage collected.
+ *
+ * Emscripten heaps grow but never shrink, so a long-lived worker that has
+ * decoded a single large image holds that peak allocation for the rest of
+ * its life. The next call re-instantiates the module on demand.
+ */
+export function dispose(): void {
+  const pending = emscriptenModule;
+  emscriptenModule = undefined;
+  disposeEmscriptenModule(pending);
 }
 
 export default async function decode(buffer: ArrayBuffer): Promise<ImageData> {

@@ -57,8 +57,23 @@ int version() {
 
 thread_local const val Uint8Array = val::global("Uint8Array");
 
-val encode(std::string image_in, int image_width, int image_height, MozJpegOptions opts) {
-  uint8_t* image_buffer = (uint8_t*)image_in.c_str();
+// Hand the caller a region of the wasm heap to write pixels into.
+//
+// Pixels used to arrive through embind's std::string binding, which copies a
+// typed array into the heap one byte at a time from JS. On a multi-megapixel
+// image that is tens of millions of individually bounds-checked writes and it
+// dominates encode time. Taking a pointer lets the caller use HEAPU8.set(),
+// which is a single memcpy.
+uintptr_t create_buffer(int size) {
+  return reinterpret_cast<uintptr_t>(malloc(size));
+}
+
+void destroy_buffer(uintptr_t pointer) {
+  free(reinterpret_cast<void*>(pointer));
+}
+
+val encode(uintptr_t pointer, int image_width, int image_height, MozJpegOptions opts) {
+  uint8_t* image_buffer = reinterpret_cast<uint8_t*>(pointer);
 
   // The code below is basically the `write_JPEG_file` function from
   // https://github.com/mozilla/mozjpeg/blob/master/example.c
@@ -236,4 +251,6 @@ EMSCRIPTEN_BINDINGS(my_module) {
 
   function("version", &version);
   function("encode", &encode);
+  function("create_buffer", &create_buffer);
+  function("destroy_buffer", &destroy_buffer);
 }

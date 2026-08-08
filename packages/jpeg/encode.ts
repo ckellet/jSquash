@@ -21,17 +21,21 @@ import type { MozJPEGModule } from './codec/enc/mozjpeg_enc.js';
 
 import mozjpeg_enc from './codec/enc/mozjpeg_enc.js';
 import { defaultOptions } from './meta.js';
-import { initEmscriptenModule } from './utils.js';
+import {
+  disposeEmscriptenModule,
+  initEmscriptenModule,
+  withPixelBuffer,
+} from './utils.js';
 
-let emscriptenModule: Promise<MozJPEGModule>;
+let emscriptenModule: Promise<MozJPEGModule> | undefined;
 
 export async function init(
   moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
-): Promise<void>;
+): Promise<MozJPEGModule>;
 export async function init(
   module?: WebAssembly.Module,
   moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
-): Promise<void> {
+): Promise<MozJPEGModule> {
   let actualModule: WebAssembly.Module | undefined = module;
   let actualOptions: Partial<EmscriptenWasm.ModuleOpts> | undefined =
     moduleOptionOverrides;
@@ -47,22 +51,37 @@ export async function init(
     actualModule,
     actualOptions,
   );
+  return emscriptenModule;
+}
+
+/**
+ * Release the module so its WebAssembly.Memory can be garbage collected.
+ *
+ * Emscripten heaps grow but never shrink, so a long-lived worker that has
+ * encoded a single large image holds that peak allocation for the rest of
+ * its life. The next call re-instantiates the module on demand.
+ */
+export function dispose(): void {
+  const pending = emscriptenModule;
+  emscriptenModule = undefined;
+  disposeEmscriptenModule(pending);
 }
 
 export default async function encode(
   data: ImageData,
   options: Partial<EncodeOptions> = {},
 ): Promise<ArrayBuffer> {
-  if (!emscriptenModule) init();
+  if (!emscriptenModule) emscriptenModule = init();
 
   const module = await emscriptenModule;
   const _options = { ...defaultOptions, ...options };
-  const resultView = module.encode(
-    data.data,
-    data.width,
-    data.height,
-    _options,
+
+  const resultView = withPixelBuffer(module, data.data, (pointer) =>
+    module.encode(pointer, data.width, data.height, _options),
   );
+
+  if (!resultView) throw new Error('Encoding error.');
+
   // wasm can't run on SharedArrayBuffers, so we hard-cast to ArrayBuffer.
   return resultView.buffer as ArrayBuffer;
 }

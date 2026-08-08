@@ -78,3 +78,24 @@ import { initHqx, initMagicKernel } from '@jsquash/resize';
 initHqx(HQX_WASM_MODULE);
 initMagicKernel(MAGIC_KERNEL_WASM_MODULE);
 ```
+
+## Releasing memory
+
+WebAssembly heaps grow but never shrink. A long-lived Worker, Cloudflare
+isolate or Node process that has handled one large image keeps that peak
+allocation for the rest of its life, even while idle.
+
+`dispose()` drops the module so its memory can be garbage collected. The next
+call re-instantiates it on demand.
+
+```js
+import { resize, dispose } from '@jsquash/resize';
+
+const output = await resize(imageData, { width: 400, height: 300 });
+dispose();
+```
+
+Only call it once outstanding work has settled - any typed array still
+pointing into the old heap is detached.
+
+This releases the resize, hqx and magic-kernel modules together.

@@ -17,20 +17,20 @@
  */
 
 import type { MozJPEGModule } from './codec/dec/mozjpeg_dec.js';
-import { initEmscriptenModule } from './utils.js';
+import { disposeEmscriptenModule, initEmscriptenModule } from './utils.js';
 
 import mozjpeg_dec from './codec/dec/mozjpeg_dec.js';
 import { DecodeOptions, defaultDecodeOptions } from './meta.js';
 
-let emscriptenModule: Promise<MozJPEGModule>;
+let emscriptenModule: Promise<MozJPEGModule> | undefined;
 
 export async function init(
   moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
-): Promise<void>;
+): Promise<MozJPEGModule>;
 export async function init(
   module?: WebAssembly.Module,
   moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
-): Promise<void> {
+): Promise<MozJPEGModule> {
   let actualModule: WebAssembly.Module | undefined = module;
   let actualOptions: Partial<EmscriptenWasm.ModuleOpts> | undefined =
     moduleOptionOverrides;
@@ -46,13 +46,27 @@ export async function init(
     actualModule,
     actualOptions,
   );
+  return emscriptenModule;
+}
+
+/**
+ * Release the module so its WebAssembly.Memory can be garbage collected.
+ *
+ * Emscripten heaps grow but never shrink, so a long-lived worker that has
+ * decoded a single large image holds that peak allocation for the rest of
+ * its life. The next call re-instantiates the module on demand.
+ */
+export function dispose(): void {
+  const pending = emscriptenModule;
+  emscriptenModule = undefined;
+  disposeEmscriptenModule(pending);
 }
 
 export default async function decode(
   buffer: ArrayBuffer,
   options: Partial<DecodeOptions> = {},
 ): Promise<ImageData> {
-  if (!emscriptenModule) init();
+  if (!emscriptenModule) emscriptenModule = init();
 
   const _options = { ...defaultDecodeOptions, ...options };
   const module = await emscriptenModule;

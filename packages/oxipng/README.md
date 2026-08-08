@@ -72,3 +72,25 @@ import optimise, { init } from '@jsquash/oxipng/optimise';
 init(WASM_MODULE); // The `WASM_MODULE` variable will need to be sourced by yourself and passed as an ArrayBuffer.
 const image = await fetch('./image.png').then(res => res.arrayBuffer()).then(optimise);
 ```
+
+## Releasing memory
+
+WebAssembly heaps grow but never shrink. A long-lived Worker, Cloudflare
+isolate or Node process that has handled one large image keeps that peak
+allocation for the rest of its life, even while idle.
+
+`dispose()` drops the module so its memory can be garbage collected. The next
+call re-instantiates it on demand.
+
+```js
+import { optimise, dispose } from '@jsquash/oxipng';
+
+const output = await optimise(pngBuffer);
+dispose();
+```
+
+Only call it once outstanding work has settled - any typed array still
+pointing into the old heap is detached.
+
+On the multi-threaded build the rayon worker pool is not torn down, so
+memory is only fully reclaimed once those workers are gone as well.

@@ -17,20 +17,20 @@
  */
 
 import type { AVIFModule } from './codec/dec/avif_dec.js';
-import { initEmscriptenModule } from './utils.js';
+import { disposeEmscriptenModule, initEmscriptenModule } from './utils.js';
 
 import avif_dec from './codec/dec/avif_dec.js';
-import { ImageData16bit } from 'meta.js';
+import type { ImageData16bit } from './meta.js';
 
-let emscriptenModule: Promise<AVIFModule>;
+let emscriptenModule: Promise<AVIFModule> | undefined;
 
 export async function init(
   moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
-): Promise<void>;
+): Promise<AVIFModule>;
 export async function init(
   module?: WebAssembly.Module,
   moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
-): Promise<void> {
+): Promise<AVIFModule> {
   let actualModule: WebAssembly.Module | undefined = module;
   let actualOptions: Partial<EmscriptenWasm.ModuleOpts> | undefined =
     moduleOptionOverrides;
@@ -46,11 +46,25 @@ export async function init(
     actualModule,
     actualOptions,
   );
+  return emscriptenModule;
 }
 
 type DecodeOptions = {
   bitDepth?: 8 | 10 | 12 | 16;
 };
+
+/**
+ * Release the module so its WebAssembly.Memory can be garbage collected.
+ *
+ * Emscripten heaps grow but never shrink, so a long-lived worker that has
+ * decoded a single large image holds that peak allocation for the rest of
+ * its life. The next call re-instantiates the module on demand.
+ */
+export function dispose(): void {
+  const pending = emscriptenModule;
+  emscriptenModule = undefined;
+  disposeEmscriptenModule(pending);
+}
 
 export default async function decode(
   buffer: ArrayBuffer,
@@ -68,7 +82,7 @@ export default async function decode(
   options?: DecodeOptions,
 ): Promise<ImageData | ImageData16bit | null> {
   if (!emscriptenModule) {
-    init();
+    emscriptenModule = init();
   }
 
   const module = await emscriptenModule;

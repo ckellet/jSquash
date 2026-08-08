@@ -21,9 +21,9 @@ import type { JXLModule } from './codec/enc/jxl_enc.js';
 
 import { defaultOptions } from './meta.js';
 import { simd, threads } from 'wasm-feature-detect';
-import { initEmscriptenModule } from './utils.js';
+import { disposeEmscriptenModule, initEmscriptenModule } from './utils.js';
 
-let emscriptenModule: Promise<JXLModule>;
+let emscriptenModule: Promise<JXLModule> | undefined;
 
 const isRunningInNode = () =>
   typeof process !== 'undefined' &&
@@ -49,35 +49,42 @@ export async function init(
     actualOptions = module as unknown as Partial<EmscriptenWasm.ModuleOpts>;
   }
 
-  if (
-    !isRunningInNode() &&
-    !isRunningInCloudflareWorker() &&
-    (await threads())
-  ) {
-    if (await simd()) {
-      const jxlEncoder = await import('./codec/enc/jxl_enc_mt_simd.js');
-      emscriptenModule = initEmscriptenModule(
-        jxlEncoder.default,
-        actualModule,
-        actualOptions,
-      );
-      return emscriptenModule;
-    }
-    const jxlEncoder = await import('./codec/enc/jxl_enc_mt.js');
-    emscriptenModule = initEmscriptenModule(
+  // Assign synchronously, before the first await. Callers are documented to
+  // be able to fire init(module) without awaiting it, and two concurrent
+  // calls must share one module rather than each building their own - both
+  // of which stop working the moment this function awaits before assigning.
+  emscriptenModule = (async () => {
+    const useThreads =
+      !isRunningInNode() && !isRunningInCloudflareWorker() && (await threads());
+    const useSimd = await simd();
+
+    const jxlEncoder = useThreads
+      ? useSimd
+        ? await import('./codec/enc/jxl_enc_mt_simd.js')
+        : await import('./codec/enc/jxl_enc_mt.js')
+      : await import('./codec/enc/jxl_enc.js');
+
+    return initEmscriptenModule(
       jxlEncoder.default,
       actualModule,
       actualOptions,
     );
-    return emscriptenModule;
-  }
-  const jxlEncoder = await import('./codec/enc/jxl_enc.js');
-  emscriptenModule = initEmscriptenModule(
-    jxlEncoder.default,
-    actualModule,
-    actualOptions,
-  );
+  })();
+
   return emscriptenModule;
+}
+
+/**
+ * Release the module so its WebAssembly.Memory can be garbage collected.
+ *
+ * Emscripten heaps grow but never shrink, so a long-lived worker that has
+ * encoded a single large image holds that peak allocation for the rest of
+ * its life. The next call re-instantiates the module on demand.
+ */
+export function dispose(): void {
+  const pending = emscriptenModule;
+  emscriptenModule = undefined;
+  disposeEmscriptenModule(pending);
 }
 
 export default async function encode(

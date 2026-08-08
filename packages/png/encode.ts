@@ -16,27 +16,16 @@
  * and modified it to encode PNG images and also optimise them.
  */
 
-import type {
-  InitInput,
-  InitOutput as PngModule,
-} from './codec/pkg/squoosh_png.js';
-import initPngModule, { encode as pngEncode } from './codec/pkg/squoosh_png.js';
+import { encode as pngEncode } from './codec/pkg/squoosh_png.js';
+import { init, dispose } from './init.js';
+
+export { init, dispose };
 
 type ImageDataRGBA16 = {
   data: Uint16Array;
   width: number;
   height: number;
 };
-
-let pngModule: Promise<PngModule>;
-
-export async function init(moduleOrPath?: InitInput): Promise<PngModule> {
-  if (!pngModule) {
-    pngModule = initPngModule(moduleOrPath);
-  }
-
-  return pngModule;
-}
 
 export default async function encode(
   data: ImageDataRGBA16,
@@ -70,7 +59,13 @@ export default async function encode(
     );
   }
 
-  const encodeData = new Uint8Array(data.data.buffer);
+  // `data` may be a view into a larger buffer, so the offset and length
+  // have to be carried across rather than reading `.buffer` wholesale.
+  const encodeData = new Uint8Array(
+    data.data.buffer,
+    data.data.byteOffset,
+    data.data.byteLength,
+  );
   const output = await pngEncode(encodeData, data.width, data.height, bitDepth);
   if (!output) throw new Error('Encoding error.');
 

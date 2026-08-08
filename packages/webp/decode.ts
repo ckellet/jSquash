@@ -17,18 +17,18 @@
  */
 import type { WebPModule } from './codec/dec/webp_dec.js';
 
-import webp_dec from './codec/dec/webp_dec.js';
-import { initEmscriptenModule } from './utils.js';
+import { disposeEmscriptenModule, initEmscriptenModule } from './utils.js';
+import { simd } from 'wasm-feature-detect';
 
-let emscriptenModule: Promise<WebPModule>;
+let emscriptenModule: Promise<WebPModule> | undefined;
 
 export async function init(
   moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
-): Promise<void>;
+): Promise<WebPModule>;
 export async function init(
   module?: WebAssembly.Module,
   moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
-): Promise<void> {
+): Promise<WebPModule> {
   let actualModule: WebAssembly.Module | undefined = module;
   let actualOptions: Partial<EmscriptenWasm.ModuleOpts> | undefined =
     moduleOptionOverrides;
@@ -39,15 +39,42 @@ export async function init(
     actualOptions = module as unknown as Partial<EmscriptenWasm.ModuleOpts>;
   }
 
-  emscriptenModule = initEmscriptenModule(
-    webp_dec,
-    actualModule,
-    actualOptions,
-  );
+  // Assign synchronously, before the first await. Callers are documented to
+  // be able to fire init(module) without awaiting it, and two concurrent
+  // calls must share one module rather than each building their own - both
+  // of which stop working the moment this function awaits before assigning.
+  emscriptenModule = (async () => {
+    // libwebp's decode path has SIMD implementations of the transforms and
+    // colour conversion; the baseline build leaves all of that on the table.
+    const webpDecoder = (await simd())
+      ? await import('./codec/dec/webp_dec_simd.js')
+      : await import('./codec/dec/webp_dec.js');
+
+    return initEmscriptenModule(
+      webpDecoder.default,
+      actualModule,
+      actualOptions,
+    );
+  })();
+
+  return emscriptenModule;
+}
+
+/**
+ * Release the module so its WebAssembly.Memory can be garbage collected.
+ *
+ * Emscripten heaps grow but never shrink, so a long-lived worker that has
+ * decoded a single large image holds that peak allocation for the rest of
+ * its life. The next call re-instantiates the module on demand.
+ */
+export function dispose(): void {
+  const pending = emscriptenModule;
+  emscriptenModule = undefined;
+  disposeEmscriptenModule(pending);
 }
 
 export default async function decode(buffer: ArrayBuffer): Promise<ImageData> {
-  if (!emscriptenModule) init();
+  if (!emscriptenModule) emscriptenModule = init();
 
   const module = await emscriptenModule;
   const result = module.decode(buffer);

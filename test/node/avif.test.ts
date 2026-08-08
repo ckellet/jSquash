@@ -1,5 +1,5 @@
 import test from 'ava';
-import { importWasmModule, getFixturesImage } from './utils.js';
+import { importWasmModule, getFixturesImage, decoded } from './utils.js';
 
 import decode, { init as initDecode } from '@jsquash/avif/decode.js';
 import encode, { init as initEncode } from '@jsquash/avif/encode.js';
@@ -26,7 +26,7 @@ test('can successfully decode 10-bit image', async (t) => {
     importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
   ]);
   initDecode(decodeWasmModule);
-  const data = await decode(testImage, { bitDepth: 10 });
+  const data = decoded(await decode(testImage, { bitDepth: 10 }));
   t.is(data.width, 128);
   t.is(data.height, 128);
   t.is(data.data.length, 4 * 128 * 128);
@@ -49,7 +49,7 @@ test('can successfully decode 12-bit image', async (t) => {
     importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
   ]);
   initDecode(decodeWasmModule);
-  const data = await decode(testImage, { bitDepth: 12 });
+  const data = decoded(await decode(testImage, { bitDepth: 12 }));
   t.is(data.width, 128);
   t.is(data.height, 128);
   t.is(data.data.length, 4 * 128 * 128);
@@ -72,7 +72,7 @@ test('can successfully decode 12-bit image to 10-bit precision', async (t) => {
     importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
   ]);
   initDecode(decodeWasmModule);
-  const data = await decode(testImage, { bitDepth: 10 });
+  const data = decoded(await decode(testImage, { bitDepth: 10 }));
   t.is(data.width, 128);
   t.is(data.height, 128);
   t.is(data.data.length, 4 * 128 * 128);
