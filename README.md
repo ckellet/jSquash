@@ -128,7 +128,11 @@ falls back to a binary with no SIMD either.
   against zero in the plain build, and encodes 4-11% faster depending on the
   `speed` setting (the win is largest at fast speeds, where the vectorisable
   transform kernels are a bigger share of the work). It costs +2.9 MB raw but
-  only +110 KB brotli, because vectorised code compresses well.
+  only +110 KB brotli, because vectorised code compresses well. The other half
+  of that cost is cold start, since wasm compile time scales with binary size:
+  measured, 8 ms to compile the SIMD encoder against 5 ms for the scalar one.
+  Three milliseconds against 4-11 ms saved on a ~100 ms encode, so it pays for
+  itself even on a single-image serverless invocation.
 - **AVIF is pinned to libavif 1.0.1 / libaom 3.7.0, and that is deliberate.**
   libavif 1.3.0 + libaom 3.12.1 was built and benchmarked, and it is not an
   upgrade on these workloads: encode is ~18% slower at `speed: 8` and level
