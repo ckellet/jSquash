@@ -14,5 +14,11 @@ SCRIPTDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 echo "EMSDK_VERSION: $EMSDK_VERSION"
 echo "BUILD_DIR: $BUILD_DIR"
 echo "SCRIPTDIR: $SCRIPTDIR"
-docker build --build-arg EMSDK_VERSION=$EMSDK_VERSION --build-arg DEFAULT_CFLAGS="$DEFAULT_CFLAGS" -t jsquash-cpp-build - < $SCRIPTDIR/cpp.Dockerfile
-docker run --rm -v $BUILD_DIR:/src jsquash-cpp-build "$@"
+# Tag per toolchain and flag set. Codecs pin different Emscripten versions, so
+# a single shared tag means two builds running at once silently hand each other
+# the wrong toolchain.
+IMG_NAME="jsquash-cpp-build-$EMSDK_VERSION-$(echo "$DEFAULT_CFLAGS" | tr -cd '[:alnum:]')"
+echo "IMG_NAME: $IMG_NAME"
+
+docker build --build-arg EMSDK_VERSION=$EMSDK_VERSION --build-arg DEFAULT_CFLAGS="$DEFAULT_CFLAGS" -t "$IMG_NAME" - < $SCRIPTDIR/cpp.Dockerfile
+docker run --rm -v $BUILD_DIR:/src "$IMG_NAME" "$@"
