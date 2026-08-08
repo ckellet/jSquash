@@ -51,3 +51,29 @@ test('dispose releases the module and encoding still works afterwards', async (t
   const second = await encode(imageData);
   t.is(second.byteLength, first.byteLength);
 });
+
+test('the SIMD-only entry points round-trip an image', async (t) => {
+  // These bind one build statically instead of feature-detecting, so a
+  // bundler emits a single .wasm. Same API as the dispatching entries.
+  const [
+    { default: encodeSimd, init: initEncodeSimd },
+    { default: decodeSimd, init: initDecodeSimd },
+  ] = await Promise.all([
+    import('@jsquash/webp/encode-simd.js'),
+    import('@jsquash/webp/decode-simd.js'),
+  ]);
+
+  const [encWasm, decWasm] = await Promise.all([
+    importWasmModule('node_modules/@jsquash/webp/codec/enc/webp_enc_simd.wasm'),
+    importWasmModule('node_modules/@jsquash/webp/codec/dec/webp_dec_simd.wasm'),
+  ]);
+  await Promise.all([initEncodeSimd(encWasm), initDecodeSimd(decWasm)]);
+
+  const imageData = new ImageData(new Uint8ClampedArray(4 * 32 * 32), 32, 32);
+  const encoded = await encodeSimd(imageData);
+  t.true(encoded.byteLength > 0);
+
+  const decoded = await decodeSimd(encoded);
+  t.is(decoded.width, 32);
+  t.is(decoded.height, 32);
+});
