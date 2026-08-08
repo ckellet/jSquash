@@ -54,6 +54,11 @@ export async function init(
   // calls must share one module rather than each building their own - both
   // of which stop working the moment this function awaits before assigning.
   emscriptenModule = (async () => {
+    // Threads need SharedArrayBuffer, so they are unavailable under Node, in
+    // Cloudflare Workers, and on any page that is not cross-origin isolated.
+    // SIMD carries no such requirement, so it is selected independently:
+    // those environments used to fall back to the build with neither, which
+    // is the slowest encoder here by a wide margin.
     const useThreads =
       !isRunningInNode() && !isRunningInCloudflareWorker() && (await threads());
     const useSimd = await simd();
@@ -62,7 +67,9 @@ export async function init(
       ? useSimd
         ? await import('./codec/enc/jxl_enc_mt_simd.js')
         : await import('./codec/enc/jxl_enc_mt.js')
-      : await import('./codec/enc/jxl_enc.js');
+      : useSimd
+        ? await import('./codec/enc/jxl_enc_simd.js')
+        : await import('./codec/enc/jxl_enc.js');
 
     return initEmscriptenModule(
       jxlEncoder.default,

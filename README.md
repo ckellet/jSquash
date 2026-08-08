@@ -91,7 +91,7 @@ the default; a codec that needs something else sets `EMSDK_VERSION` in its own
 | Codec | Emscripten | Notes |
 | --- | --- | --- |
 | jpeg, webp, avif, qoi | 4.0.16 | Built natively on arm64; see below |
-| jxl | 2.0.34 | Not yet verified on a newer toolchain |
+| jxl | 3.1.57 | Four libjxl builds, and cannot move to 4.x; see below |
 
 4.0.16 is the first Emscripten release published for arm64. Earlier tags are
 amd64 only and run under emulation on Apple Silicon, which costs roughly an
@@ -150,6 +150,24 @@ falls back to a binary with no SIMD either.
   de-interleaving loads and stores, which pays off in the encoder but not in
   the decoder, so the encoder links the Neon build and the decoder links an
   autovectorised-only one. `packages/jpeg/codec/Makefile` has the numbers.
+- **JXL builds libjxl four times**, once per (threads, SIMD) combination,
+  where the other codecs need one library per SIMD variant. A single-threaded
+  wrapper cannot link a libjxl compiled with `-pthread`: from Emscripten 3.1.x
+  on, TLS initialisers in `-pthread` objects are never run in a link that is
+  not itself `-pthread`, so every `thread_local` with a dynamic initialiser
+  keeps its zero value. That includes embind's cached
+  `_emval_get_method_caller` id, so the first `val::new_()` fails at runtime
+  with "caller is not a function" - a linker-level mismatch that produces no
+  build-time diagnostic. Emscripten 2.0.34 ran those initialisers from
+  `__wasm_call_ctors`, which is why the old two-library layout worked.
+- **JXL cannot move to Emscripten 4.x.** `emscripten/emsdk` only publishes
+  arm64 images from 4.0.16 onward, so on Apple Silicon every older tag builds
+  under QEMU emulation, roughly 15-20x slower. JXL cannot have that yet: on
+  4.0.16 the Clang 22 frontend segfaults in `EmitBuiltinExpr` compiling
+  `hwy/aligned_allocator.cc` from the 2021 highway that libjxl vendors.
+  Unpinning it needs a libjxl bump, which changes encoder output and wants its
+  own quality comparison. Going back to 2.0.34 is also closed off: its bundled
+  terser predates `import.meta`, which `codec/pre.js` now uses.
 
 ## Known Issues
 

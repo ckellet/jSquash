@@ -8,8 +8,9 @@
 
 using namespace emscripten;
 
-thread_local const val Uint8ClampedArray = val::global("Uint8ClampedArray");
-thread_local const val ImageData = val::global("ImageData");
+// Looked up per call rather than cached in a thread_local - see the note in
+// enc/jxl_enc.cpp. A build without -pthread never runs TLS initialisers, so a
+// cached val stays undefined and .new_() on it fails.
 
 // R, G, B, A
 #define COMPONENTS_PER_PIXEL 4
@@ -89,9 +90,10 @@ val decode(std::string data) {
       &jxl_profile, byte_pixels.get(), skcms_PixelFormat_RGBA_8888, skcms_AlphaFormat_Unpremul,
       skcms_sRGB_profile(), pixel_count));
 
-  return ImageData.new_(
-      Uint8ClampedArray.new_(typed_memory_view(component_count, byte_pixels.get())), info.xsize,
-      info.ysize);
+  return val::global("ImageData")
+      .new_(val::global("Uint8ClampedArray")
+                .new_(typed_memory_view(component_count, byte_pixels.get())),
+            info.xsize, info.ysize);
 }
 
 EMSCRIPTEN_BINDINGS(my_module) {

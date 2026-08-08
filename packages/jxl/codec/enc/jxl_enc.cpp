@@ -8,7 +8,16 @@
 
 using namespace emscripten;
 
-thread_local const val Uint8Array = val::global("Uint8Array");
+// Looked up per call rather than cached in a thread_local.
+//
+// Clang emits the dynamic initialiser of a thread_local into the TLS init
+// function, and a build without -pthread never calls it, so the cached val
+// stayed default-constructed (undefined) and every `.new_()` on it failed with
+// "undefined is not a constructor". Emscripten 2.0.34 happened to initialise
+// these from __wasm_call_ctors, which is why it only broke on the upgrade.
+// A plain static would not be correct either: each pthread is its own Worker
+// with its own emval handle table, so a handle cannot be shared between them.
+// One global property lookup per call is not measurable against an encode.
 
 struct JXLOptions {
   int effort;
@@ -106,7 +115,8 @@ val encode(std::string image, int width, int height, JXLOptions options) {
 
   auto js_result = val::null();
   if (EncodeFile(cparams, &io, &passes_enc_state, &bytes, jxl::GetJxlCms(), /*aux=*/nullptr, pool_ptr)) {
-    js_result = Uint8Array.new_(typed_memory_view(bytes.size(), bytes.data()));
+    js_result = val::global("Uint8Array")
+                    .new_(typed_memory_view(bytes.size(), bytes.data()));
   }
 
   return js_result;
