@@ -1,6 +1,5 @@
 #include <emscripten/bind.h>
 #include <emscripten/val.h>
-#include "config.h"
 #include "jpeglib.h"
 #include <string.h>
 #include <vector>
