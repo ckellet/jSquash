@@ -17,6 +17,22 @@ all: $(OUT_JS)
 # Define dependencies for all variations of build artifacts.
 $(filter enc/%,$(OUT_JS)): enc/webp_enc.o
 $(filter dec/%,$(OUT_JS)): dec/webp_dec.o
+# ICC profiles live in RIFF chunks that the core codec API cannot see:
+# WebPEncode writes a bare bitstream and WebPDecodeRGBA is handed one, so
+# neither knows the container exists. Reading a chunk needs libwebpdemux and
+# writing one needs libwebpmux.
+#
+# Both archives are already produced by the cmake invocation below and were
+# simply never linked. libwebp 1.6.0 has a WEBP_BUILD_LIBWEBPMUX option that
+# defaults on and is independent of the gif2webp/img2webp tools this build
+# disables - older releases gated the mux library on those tools, which is
+# where the belief that it needed a build change came from.
+#
+# Listed before libwebp.a because they call into it, not the other way round.
+dec/webp_dec.js: $(CODEC_BASELINE_BUILD_DIR)/libwebpdemux.a
+dec/webp_dec_simd.js: $(CODEC_SIMD_BUILD_DIR)/libwebpdemux.a
+enc/webp_enc.js: $(CODEC_BASELINE_BUILD_DIR)/libwebpmux.a
+enc/webp_enc_simd.js: $(CODEC_SIMD_BUILD_DIR)/libwebpmux.a
 enc/webp_enc.js dec/webp_dec.js: $(CODEC_BASELINE_BUILD_DIR)/libwebp.a
 enc/webp_enc_simd.js dec/webp_dec_simd.js: $(CODEC_SIMD_BUILD_DIR)/libwebp.a
 # Sharp YUV moved out into its own library in libwebp 1.2.1, and the encoder
@@ -46,8 +62,8 @@ $(OUT_JS):
 		-o $@ \
 		$<
 
-# One CMake invocation produces both archives.
-%/libwebp.a %/libsharpyuv.a: %/Makefile
+# One CMake invocation produces all four archives.
+%/libwebp.a %/libsharpyuv.a %/libwebpdemux.a %/libwebpmux.a: %/Makefile
 	$(MAKE) -C $(@D)
 
 # Enable SIMD on a SIMD build.

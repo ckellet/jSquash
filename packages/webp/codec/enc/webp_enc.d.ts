@@ -39,6 +39,17 @@ export interface WebPModule extends EmscriptenWasm.Module {
     height: number,
     options: EncodeOptions,
   ): Uint8Array | null;
+  /**
+   * As `encode`, but assembles the output into the extended (VP8X) container
+   * with the profile in an ICCP chunk.
+   */
+  encode_with_icc_profile(
+    pointer: number,
+    width: number,
+    height: number,
+    options: EncodeOptions,
+    icc: Uint8Array,
+  ): Uint8Array | null;
 }
 
 declare var moduleFactory: EmscriptenWasm.ModuleFactory<WebPModule>;
