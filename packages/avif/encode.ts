@@ -21,7 +21,7 @@ import type { AVIFModule } from './codec/enc/avif_enc.js';
 
 import { defaultOptions } from './meta.js';
 import { disposeEmscriptenModule, initEmscriptenModule } from './utils.js';
-import { threads } from 'wasm-feature-detect';
+import { simd, threads } from 'wasm-feature-detect';
 
 let emscriptenModule: Promise<AVIFModule> | undefined;
 
@@ -54,12 +54,18 @@ export async function init(
   // calls must share one module rather than each building their own - both
   // of which stop working the moment this function awaits before assigning.
   emscriptenModule = (async () => {
+    // Threads need SharedArrayBuffer, which Node, Cloudflare Workers and any
+    // page that is not cross-origin isolated do not have. SIMD has no such
+    // requirement, so those runtimes get the SIMD build rather than falling
+    // all the way back to the build with neither.
     const useThreads =
       !isRunningInNode() && !isRunningInCloudflareWorker() && (await threads());
 
     const avifEncoder = useThreads
       ? await import('./codec/enc/avif_enc_mt.js')
-      : await import('./codec/enc/avif_enc.js');
+      : (await simd())
+        ? await import('./codec/enc/avif_enc_simd.js')
+        : await import('./codec/enc/avif_enc.js');
 
     return initEmscriptenModule(
       avifEncoder.default,

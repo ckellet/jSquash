@@ -91,8 +91,12 @@ the default; a codec that needs something else sets `EMSDK_VERSION` in its own
 | Codec | Emscripten | Notes |
 | --- | --- | --- |
 | webp, jpeg, qoi | 3.1.57 | |
-| avif | 3.1.57 | Built `-Oz`; see below |
+| avif | 4.0.16 | Built `-Oz`; see below |
 | jxl | 2.0.34 | Not yet verified on a newer toolchain |
+
+4.0.16 is the first Emscripten release published for arm64. Earlier tags are
+amd64 only and run under emulation on Apple Silicon, which costs roughly an
+order of magnitude on a build the size of libaom.
 
 Rust codecs build through `tools/build-rust.sh`, which pins the image in
 `tools/rust.Dockerfile` and compiles with `-C target-feature=+simd128`.
@@ -113,11 +117,18 @@ falls back to a binary with no SIMD either.
 
 ### Known trade-offs
 
-- **AVIF is compiled `-Oz`.** The encoder is already 3.4 MB per variant, so it
-  is built for size, which costs encode speed. Moving to `-O2` is worth
-  measuring with `npm run bench` if encode time matters more than payload.
+- **AVIF is compiled `-Oz`, and that is not a speed compromise.** Measured on
+  the bench fixture, `-Oz`, `-O2` and `-O3` encode within 1.5% of each other -
+  inside run-to-run noise - while `-O2`/`-O3` add ~8% to the binary. libaom's
+  hot loops are memory-bound and already hand-tuned, so the extra inlining
+  buys nothing. `-Oz` is the best point on the curve, not a trade-off.
 - **libaom is built with `AOM_TARGET_CPU=generic`**, so AVIF gets no
-  hand-written SIMD - only whatever the compiler autovectorises.
+  hand-written SIMD - only whatever the compiler autovectorises. That turns
+  out to be a lot: the SIMD encoder build carries ~465k v128 instructions
+  against zero in the plain build, and encodes 4-11% faster depending on the
+  `speed` setting (the win is largest at fast speeds, where the vectorisable
+  transform kernels are a bigger share of the work). It costs +2.9 MB raw but
+  only +110 KB brotli, because vectorised code compresses well.
 - **MozJPEG is pinned to 3.3.1 (2016).** Moving to 4.x means migrating the
   build from autotools to CMake, and would also make `--with-simd` available.
 
