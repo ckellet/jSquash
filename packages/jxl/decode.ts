@@ -18,16 +18,20 @@
 
 import { simd } from 'wasm-feature-detect';
 import { createDecoder } from './decode-core.js';
+import type { DecodedImage, ImageMetadata } from './meta.js';
+
+export type { DecodedImage, ImageMetadata };
 
 // libjxl leans on highway for the inverse transforms and colour conversion,
 // and the decoder was previously linked against the build with SIMD disabled
 // - so no environment got it, browser or otherwise. Import './decode-simd.js'
 // to commit to that build and avoid shipping the baseline one alongside it.
-const { init, dispose, decode } = createDecoder(async () =>
-  (await simd())
-    ? (await import('./codec/dec/jxl_dec_simd.js')).default
-    : (await import('./codec/dec/jxl_dec.js')).default,
-);
+const { init, dispose, decode, decodeWithMetadata, readIccProfile } =
+  createDecoder(async () =>
+    (await simd())
+      ? (await import('./codec/dec/jxl_dec_simd.js')).default
+      : (await import('./codec/dec/jxl_dec.js')).default,
+  );
 
-export { init, dispose };
+export { init, dispose, decodeWithMetadata, readIccProfile };
 export default decode;

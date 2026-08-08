@@ -14,7 +14,11 @@ import type { EncodeOptions } from './meta.js';
 import type { JXLModule } from './codec/enc/jxl_enc.js';
 
 import { defaultOptions } from './meta.js';
-import { disposeEmscriptenModule, initEmscriptenModule } from './utils.js';
+import {
+  disposeEmscriptenModule,
+  initEmscriptenModule,
+  withPixelBuffer,
+} from './utils.js';
 
 /** Resolves the Emscripten factory for whichever build was selected. */
 export type CodecLoader = () => Promise<
@@ -93,11 +97,8 @@ export function createEncoder(loadCodec: CodecLoader) {
       _options.lossyPalette = false;
     }
 
-    const resultView = module.encode(
-      data.data,
-      data.width,
-      data.height,
-      _options,
+    const resultView = withPixelBuffer(module, data.data, (pointer) =>
+      module.encode(pointer, data.width, data.height, _options),
     );
     if (!resultView) {
       throw new Error('Encoding error.');

@@ -66,6 +66,7 @@ $(OUT_JS):
 		-s EXPORT_ES6=1 \
 		-s DYNAMIC_EXECUTION=0 \
 		-s MODULARIZE=1 \
+		-s EXPORTED_RUNTIME_METHODS=HEAPU8 \
 		-s PTHREAD_POOL_SIZE='Math.min(navigator.hardwareConcurrency,8)' \
 		-o $@ \
 		$+ \

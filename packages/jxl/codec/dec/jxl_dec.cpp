@@ -43,10 +43,70 @@ using namespace emscripten;
 #define EXPECT_EQ(a, b) EXPECT_TRUE((a) == (b));
 #endif
 
-val decode(std::string data) {
-  std::unique_ptr<JxlDecoder,
-                  std::integral_constant<decltype(&JxlDecoderDestroy), JxlDecoderDestroy>>
-      dec(JxlDecoderCreate(nullptr));
+using JxlDecoderPtr =
+    std::unique_ptr<JxlDecoder,
+                    std::integral_constant<decltype(&JxlDecoderDestroy), JxlDecoderDestroy>>;
+
+// Read the profile the *file* declares, without decoding a single pixel.
+//
+// This is JXL_COLOR_PROFILE_TARGET_ORIGINAL - the space the image was authored
+// in - and deliberately not the space `decode` returns pixels in. The two are
+// different here, which is the whole difficulty with JXL and colour management:
+// see the comment above decode_impl. Because this profile never travels
+// alongside pixels it cannot mislabel any, so it is safe to hand back as-is.
+//
+// Never throws: metadata is advisory, and a file whose pixels decode perfectly
+// well should not fail over an unreadable colour profile. Returns null, which
+// the wrapper turns into undefined.
+val read_icc_profile(std::string data) {
+  JxlDecoderPtr dec(JxlDecoderCreate(nullptr));
+  if (JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING) !=
+      JXL_DEC_SUCCESS) {
+    return val::null();
+  }
+
+  JxlDecoderSetInput(dec.get(), (const uint8_t*)data.c_str(), data.size());
+  if (JxlDecoderProcessInput(dec.get()) != JXL_DEC_BASIC_INFO) return val::null();
+  if (JxlDecoderProcessInput(dec.get()) != JXL_DEC_COLOR_ENCODING) return val::null();
+
+  // format is only consulted for JXL_COLOR_PROFILE_TARGET_DATA, so nullptr is
+  // correct here and means no pixel format has to be invented to ask.
+  size_t icc_size;
+  if (JxlDecoderGetICCProfileSize(dec.get(), nullptr, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                                  &icc_size) != JXL_DEC_SUCCESS) {
+    return val::null();
+  }
+  if (icc_size == 0) return val::null();
+
+  std::vector<uint8_t> icc_profile(icc_size);
+  if (JxlDecoderGetColorAsICCProfile(dec.get(), nullptr, JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                                     icc_profile.data(), icc_profile.size()) != JXL_DEC_SUCCESS) {
+    return val::null();
+  }
+
+  return val::global("Uint8Array")
+      .new_(typed_memory_view(icc_profile.size(), icc_profile.data()));
+}
+
+// `decode` and `decode_with_metadata` share this; only what they return of it
+// differs. `decode`'s behaviour is unchanged.
+//
+// The pixels handed back are always sRGB. libjxl gives us the image in
+// whatever space it chose (JXL_COLOR_PROFILE_TARGET_DATA) and skcms converts
+// that to sRGB below, so reporting the file's own profile alongside these
+// pixels would describe them wrongly - they are not in that space any more.
+// What `want_metadata` adds is therefore the sRGB profile, which is what the
+// returned pixels are actually in. Callers who want the source profile ask
+// read_icc_profile for it, where it is not attached to converted pixels.
+//
+// Note also that TARGET_DATA is frequently *not* the file's profile: for a
+// lossy (XYB) image whose original space is an arbitrary ICC profile, this
+// version of libjxl decodes to linear sRGB and offers no way to ask for the
+// original space back (JxlDecoderSetPreferredColorProfile only speaks
+// JxlColorEncoding enums). Handing back "untransformed" pixels would mean
+// handing back linear light quantised to 8 bits, which bands badly.
+val decode_impl(std::string data, bool want_metadata) {
+  JxlDecoderPtr dec(JxlDecoderCreate(nullptr));
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSubscribeEvents(
                 dec.get(), JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FULL_IMAGE));
@@ -90,12 +150,37 @@ val decode(std::string data) {
       &jxl_profile, byte_pixels.get(), skcms_PixelFormat_RGBA_8888, skcms_AlphaFormat_Unpremul,
       skcms_sRGB_profile(), pixel_count));
 
-  return val::global("ImageData")
-      .new_(val::global("Uint8ClampedArray")
-                .new_(typed_memory_view(component_count, byte_pixels.get())),
-            info.xsize, info.ysize);
+  auto image = val::global("ImageData")
+                   .new_(val::global("Uint8ClampedArray")
+                             .new_(typed_memory_view(component_count, byte_pixels.get())),
+                         info.xsize, info.ysize);
+
+  if (!want_metadata) return image;
+
+  // The profile the pixels above are in, generated from libjxl's own fields
+  // rather than embedded as a constant - the code that builds it is already
+  // linked, so this costs no binary size.
+  const jxl::PaddedBytes& srgb_icc = jxl::ColorEncoding::SRGB(/*is_gray=*/false).ICC();
+
+  auto result = val::object();
+  result.set("image", image);
+  if (!srgb_icc.empty()) {
+    result.set("icc", val::global("Uint8Array")
+                          .new_(typed_memory_view(srgb_icc.size(), srgb_icc.data())));
+  }
+  return result;
+}
+
+val decode(std::string data) {
+  return decode_impl(std::move(data), /*want_metadata=*/false);
+}
+
+val decode_with_metadata(std::string data) {
+  return decode_impl(std::move(data), /*want_metadata=*/true);
 }
 
 EMSCRIPTEN_BINDINGS(my_module) {
   function("decode", &decode);
+  function("decode_with_metadata", &decode_with_metadata);
+  function("read_icc_profile", &read_icc_profile);
 }

@@ -7,8 +7,11 @@ export {
   default as decode,
   init as initDecode,
   dispose as disposeDecoder,
+  decodeWithMetadata,
+  readIccProfile,
 } from './decode.js';
 export { EncodeOptions } from './meta.js';
+export type { DecodedImage, ImageMetadata } from './meta.js';
 import { dispose as disposeEncoderFn } from './encode.js';
 import { dispose as disposeDecoderFn } from './decode.js';
 

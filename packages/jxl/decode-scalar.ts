@@ -17,8 +17,12 @@
  */
 import codec from './codec/dec/jxl_dec.js';
 import { createDecoder } from './decode-core.js';
+import type { DecodedImage, ImageMetadata } from './meta.js';
 
-const { init, dispose, decode } = createDecoder(async () => codec);
+export type { DecodedImage, ImageMetadata };
 
-export { init, dispose };
+const { init, dispose, decode, decodeWithMetadata, readIccProfile } =
+  createDecoder(async () => codec);
+
+export { init, dispose, decodeWithMetadata, readIccProfile };
 export default decode;
