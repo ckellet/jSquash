@@ -16,10 +16,16 @@
  * and modified it to encode PNG images and also optimise them.
  */
 
-import { encode as pngEncode } from './codec/pkg/squoosh_png.js';
+import {
+  encode as pngEncode,
+  encode_with_icc_profile as pngEncodeWithIccProfile,
+} from './codec/pkg/squoosh_png.js';
 import { init, dispose } from './init.js';
+import { toIccProfileBytes } from './meta.js';
+import type { IccProfileInput } from './meta.js';
 
 export { init, dispose };
+export type { IccProfileInput };
 
 type ImageDataRGBA16 = {
   data: Uint16Array;
@@ -27,17 +33,31 @@ type ImageDataRGBA16 = {
   height: number;
 };
 
+export interface EncodeOptions {
+  bitDepth?: 8 | 16;
+  /**
+   * ICC profile to embed as an `iCCP` chunk, as handed back by
+   * `decodeWithMetadata`. Omit it and the output carries no profile, exactly as
+   * before - this encoder writes neither `iCCP` nor `sRGB` by default, so a
+   * profile is never ambiguous when present.
+   *
+   * The pixels are written unchanged: this is passthrough, not conversion. The
+   * profile must therefore be the one the pixels are already in.
+   */
+  icc?: IccProfileInput;
+}
+
 export default async function encode(
   data: ImageDataRGBA16,
-  options: { bitDepth: 16 },
+  options: EncodeOptions & { bitDepth: 16 },
 ): Promise<ArrayBuffer>;
 export default async function encode(
   data: ImageData,
-  options?: { bitDepth?: 8 },
+  options?: EncodeOptions & { bitDepth?: 8 },
 ): Promise<ArrayBuffer>;
 export default async function encode(
   data: ImageData | ImageDataRGBA16,
-  options: { bitDepth?: 8 | 16 } = {},
+  options: EncodeOptions = {},
 ): Promise<ArrayBuffer> {
   await init();
 
@@ -66,7 +86,23 @@ export default async function encode(
     data.data.byteOffset,
     data.data.byteLength,
   );
-  const output = await pngEncode(encodeData, data.width, data.height, bitDepth);
+
+  // Validated on this side of the boundary so the error names the actual
+  // problem, and kept out of the no-profile path so that call stays exactly
+  // what it was.
+  const icc =
+    options.icc === undefined ? undefined : toIccProfileBytes(options.icc);
+
+  const output =
+    icc === undefined
+      ? await pngEncode(encodeData, data.width, data.height, bitDepth)
+      : await pngEncodeWithIccProfile(
+          encodeData,
+          data.width,
+          data.height,
+          bitDepth,
+          icc,
+        );
   if (!output) throw new Error('Encoding error.');
 
   return output.buffer;

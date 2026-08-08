@@ -97,6 +97,61 @@ const rawImageData = await create16bitImage();
 const png16bitBuffer = await encode(rawImageData, { bitDepth: 16 });
 ```
 
+## Colour profiles (ICC)
+
+`decode` returns pixels in the file's **own** colour space, not sRGB. A Display
+P3 or Adobe RGB PNG decodes to the numbers that were in the file; what those
+numbers mean is described by the image's embedded ICC profile.
+
+This package **carries profiles, it does not apply them**. It will not transform
+pixels between colour spaces - use a colour management library, or the browser's
+own (a `canvas` created with the right `colorSpace`, or `createImageBitmap`), if
+you need that. Before this API existed the profile was discarded on decode and
+never written on encode, so a wide-gamut image silently round-tripped as if it
+were sRGB and came out desaturated in any colour-managed viewer.
+
+See [docs/colour-management.md](/docs/colour-management.md) for the full design.
+
+### decodeWithMetadata(data: ArrayBuffer, options?: { bitDepth?: 8 | 16 }): Promise<DecodedImage>
+
+Like `decode`, but returns the image together with its embedded metadata:
+
+```ts
+{ image: ImageData, metadata: { icc?: Uint8Array, exif?: Uint8Array } }
+```
+
+`metadata.icc` holds the raw profile from the `iCCP` chunk, or is absent when
+the image carries none. `metadata.exif` is always absent for PNG today - reading
+the `eXIf` chunk needs a `png` crate bump.
+
+`decode` is unchanged and still resolves to a plain `ImageData` you can put
+straight on a canvas. Metadata lives on a separate function precisely so that
+signature never changes.
+
+### readIccProfile(data: ArrayBuffer): Promise<Uint8Array | undefined>
+
+Reads the profile **without decoding any pixels** - parsing stops at the first
+`IDAT`. Use this to ask "what colour space is this file in?" cheaply. Resolves
+to `undefined` when there is no profile, or when the profile is present but
+unreadable; metadata never throws.
+
+### encode(data, options?: { bitDepth?: 8 | 16, icc?: Uint8Array | ArrayBuffer })
+
+Pass `icc` to embed a profile as an `iCCP` chunk. Omit it and the output carries
+no profile, exactly as before. The pixels are written unchanged, so the profile
+must be the one they are already in.
+
+```js
+import { decodeWithMetadata, encode } from '@jsquash/png';
+
+const { image, metadata } = await decodeWithMetadata(await file.arrayBuffer());
+// ... resize, filter, whatever - as long as you do not change colour space
+const output = await encode(image, { icc: metadata.icc });
+```
+
+An `icc` value that is not a plausible ICC profile throws before any encoding
+work happens.
+
 ## Manual WASM initialisation (not recommended)
 
 In most situations there is no need to manually initialise the provided WebAssembly modules.

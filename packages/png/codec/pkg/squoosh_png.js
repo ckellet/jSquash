@@ -47,20 +47,6 @@ function getStringFromWasm0(ptr, len) {
     return cachedTextDecoder.decode(getUint8Memory0().subarray(ptr, ptr + len));
 }
 
-let cachedUint8ClampedMemory0 = null;
-
-function getUint8ClampedMemory0() {
-    if (cachedUint8ClampedMemory0 === null || cachedUint8ClampedMemory0.byteLength === 0) {
-        cachedUint8ClampedMemory0 = new Uint8ClampedArray(wasm.memory.buffer);
-    }
-    return cachedUint8ClampedMemory0;
-}
-
-function getClampedArrayU8FromWasm0(ptr, len) {
-    ptr = ptr >>> 0;
-    return getUint8ClampedMemory0().subarray(ptr / 1, ptr / 1 + len);
-}
-
 let WASM_VECTOR_LEN = 0;
 
 function passArray8ToWasm0(arg, malloc) {
@@ -83,6 +69,60 @@ function getArrayU8FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getUint8Memory0().subarray(ptr / 1, ptr / 1 + len);
 }
+/**
+* As `encode`, but embeds `icc_profile` as an `iCCP` chunk.
+*
+* Kept separate from `encode` rather than added as an optional argument so the
+* common path keeps its exact signature and does no extra work.
+* @param {Uint8Array} data
+* @param {number} width
+* @param {number} height
+* @param {number} bit_depth
+* @param {Uint8Array} icc_profile
+* @returns {Uint8Array}
+*/
+export function encode_with_icc_profile(data, width, height, bit_depth, icc_profile) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(icc_profile, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.encode_with_icc_profile(retptr, ptr0, len0, width, height, bit_depth, ptr1, len1);
+        var r0 = getInt32Memory0()[retptr / 4 + 0];
+        var r1 = getInt32Memory0()[retptr / 4 + 1];
+        var v3 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_free(r0, r1 * 1, 1);
+        return v3;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+let cachedUint8ClampedMemory0 = null;
+
+function getUint8ClampedMemory0() {
+    if (cachedUint8ClampedMemory0 === null || cachedUint8ClampedMemory0.byteLength === 0) {
+        cachedUint8ClampedMemory0 = new Uint8ClampedArray(wasm.memory.buffer);
+    }
+    return cachedUint8ClampedMemory0;
+}
+
+function getClampedArrayU8FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint8ClampedMemory0().subarray(ptr / 1, ptr / 1 + len);
+}
+/**
+* @param {Uint8Array} data
+* @returns {ImageDataRGBA16}
+*/
+export function decode_rgba16(data) {
+    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decode_rgba16(ptr0, len0);
+    return ImageDataRGBA16.__wrap(ret);
+}
+
 /**
 * @param {Uint8Array} data
 * @param {number} width
@@ -118,14 +158,36 @@ export function decode(data) {
 }
 
 /**
+* Read the `iCCP` chunk without decoding any pixels.
+*
+* Decoding stops at the first `IDAT`, so this is a header parse plus one small
+* inflate rather than a second decode. Keeping it separate from `decode` is
+* what lets the pixel path stay byte-for-byte unchanged for callers who never
+* ask for metadata.
+*
+* Returns `None` rather than throwing whenever the profile cannot be read.
+* Metadata is advisory: a file whose pixels decode perfectly well should not
+* start failing because an ancillary chunk is malformed.
 * @param {Uint8Array} data
-* @returns {ImageDataRGBA16}
+* @returns {Uint8Array | undefined}
 */
-export function decode_rgba16(data) {
-    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.decode_rgba16(ptr0, len0);
-    return ImageDataRGBA16.__wrap(ret);
+export function read_icc_profile(data) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.read_icc_profile(retptr, ptr0, len0);
+        var r0 = getInt32Memory0()[retptr / 4 + 0];
+        var r1 = getInt32Memory0()[retptr / 4 + 1];
+        let v2;
+        if (r0 !== 0) {
+            v2 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_free(r0, r1 * 1, 1);
+        }
+        return v2;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**
@@ -328,6 +390,6 @@ export function dispose() {
   wasm = undefined;
   __wbg_init.__wbindgen_wasm_module = undefined;
   cachedUint8Memory0 = null;
-  cachedUint8ClampedMemory0 = null;
   cachedInt32Memory0 = null;
+  cachedUint8ClampedMemory0 = null;
 }

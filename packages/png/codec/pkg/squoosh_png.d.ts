@@ -1,6 +1,24 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
+* As `encode`, but embeds `icc_profile` as an `iCCP` chunk.
+*
+* Kept separate from `encode` rather than added as an optional argument so the
+* common path keeps its exact signature and does no extra work.
+* @param {Uint8Array} data
+* @param {number} width
+* @param {number} height
+* @param {number} bit_depth
+* @param {Uint8Array} icc_profile
+* @returns {Uint8Array}
+*/
+export function encode_with_icc_profile(data: Uint8Array, width: number, height: number, bit_depth: number, icc_profile: Uint8Array): Uint8Array;
+/**
+* @param {Uint8Array} data
+* @returns {ImageDataRGBA16}
+*/
+export function decode_rgba16(data: Uint8Array): ImageDataRGBA16;
+/**
 * @param {Uint8Array} data
 * @param {number} width
 * @param {number} height
@@ -14,10 +32,20 @@ export function encode(data: Uint8Array, width: number, height: number, bit_dept
 */
 export function decode(data: Uint8Array): ImageData;
 /**
+* Read the `iCCP` chunk without decoding any pixels.
+*
+* Decoding stops at the first `IDAT`, so this is a header parse plus one small
+* inflate rather than a second decode. Keeping it separate from `decode` is
+* what lets the pixel path stay byte-for-byte unchanged for callers who never
+* ask for metadata.
+*
+* Returns `None` rather than throwing whenever the profile cannot be read.
+* Metadata is advisory: a file whose pixels decode perfectly well should not
+* start failing because an ancillary chunk is malformed.
 * @param {Uint8Array} data
-* @returns {ImageDataRGBA16}
+* @returns {Uint8Array | undefined}
 */
-export function decode_rgba16(data: Uint8Array): ImageDataRGBA16;
+export function read_icc_profile(data: Uint8Array): Uint8Array | undefined;
 /**
 */
 export class ImageDataRGBA16 {
@@ -41,12 +69,14 @@ export interface InitOutput {
   readonly decode: (a: number, b: number) => number;
   readonly decode_rgba16: (a: number, b: number) => number;
   readonly encode: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+  readonly encode_with_icc_profile: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
   readonly imagedatargba16_data: (a: number) => number;
   readonly imagedatargba16_height: (a: number) => number;
   readonly imagedatargba16_width: (a: number) => number;
-  readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+  readonly read_icc_profile: (a: number, b: number, c: number) => void;
   readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
+  readonly __wbindgen_free: (a: number, b: number, c: number) => void;
 }
 
 export type SyncInitInput = BufferSource | WebAssembly.Module;
