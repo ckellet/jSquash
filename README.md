@@ -90,8 +90,7 @@ the default; a codec that needs something else sets `EMSDK_VERSION` in its own
 
 | Codec | Emscripten | Notes |
 | --- | --- | --- |
-| jpeg, webp, avif | 4.0.16 | Built natively on arm64; see below |
-| qoi | 3.1.57 | |
+| jpeg, webp, avif, qoi | 4.0.16 | Built natively on arm64; see below |
 | jxl | 2.0.34 | Not yet verified on a newer toolchain |
 
 4.0.16 is the first Emscripten release published for arm64. Earlier tags are
