@@ -70,6 +70,57 @@ Depending on which format you are using check the examples below:
 - [Web App using image codecs bundled with Webpack](/examples/with-webpack)
 - [Deno script that converts images from the file system](/examples/with-deno)
 
+## Building the codecs
+
+The `.wasm` binaries are committed, so most work needs only `npm run build`
+(TypeScript) at the repository root. Rebuilding a codec from source needs
+Docker, and is done per package:
+
+```sh
+cd packages/webp/codec && npm run build     # Emscripten codecs
+cd packages/resize/lib/resize && npm run build   # Rust codecs
+```
+
+### Toolchain pinning
+
+Emscripten is pinned per codec rather than globally, because the upstream
+libraries do not all tolerate the same version. `tools/build-cpp.sh` supplies
+the default; a codec that needs something else sets `EMSDK_VERSION` in its own
+`codec/package.json`.
+
+| Codec | Emscripten | Notes |
+| --- | --- | --- |
+| webp, jpeg, qoi | 3.1.57 | |
+| avif | 3.1.57 | Built `-Oz`; see below |
+| jxl | 2.0.34 | Not yet verified on a newer toolchain |
+
+Rust codecs build through `tools/build-rust.sh`, which pins the image in
+`tools/rust.Dockerfile` and compiles with `-C target-feature=+simd128`.
+
+### SIMD and thread variants
+
+Several codecs ship more than one binary and pick between them at runtime:
+
+- **SIMD** is used wherever a SIMD build exists. Every browser these packages
+  target supports it, as do Node, Deno and Cloudflare Workers.
+- **Threads** additionally require `SharedArrayBuffer`, so they are used only
+  in a cross-origin-isolated browser context - never in Node or Cloudflare
+  Workers.
+
+Because those two capabilities are independent, codecs with a threaded build
+also need a SIMD-only build; otherwise a runtime without threads silently
+falls back to a binary with no SIMD either.
+
+### Known trade-offs
+
+- **AVIF is compiled `-Oz`.** The encoder is already 3.4 MB per variant, so it
+  is built for size, which costs encode speed. Moving to `-O2` is worth
+  measuring with `npm run bench` if encode time matters more than payload.
+- **libaom is built with `AOM_TARGET_CPU=generic`**, so AVIF gets no
+  hand-written SIMD - only whatever the compiler autovectorises.
+- **MozJPEG is pinned to 3.3.1 (2016).** Moving to 4.x means migrating the
+  build from autotools to CMake, and would also make `--with-simd` available.
+
 ## Known Issues
 
 ### Issues with Vite and Vue build environments
