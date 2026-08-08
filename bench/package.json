@@ -1,0 +1,18 @@
+{
+  "name": "jsquash-bench",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bench": "node bench.mjs"
+  },
+  "devDependencies": {
+    "@jsquash/avif": "file:../packages/avif/dist",
+    "@jsquash/jpeg": "file:../packages/jpeg/dist",
+    "@jsquash/jxl": "file:../packages/jxl/dist",
+    "@jsquash/oxipng": "file:../packages/oxipng/dist",
+    "@jsquash/png": "file:../packages/png/dist",
+    "@jsquash/qoi": "file:../packages/qoi/dist",
+    "@jsquash/resize": "file:../packages/resize/dist",
+    "@jsquash/webp": "file:../packages/webp/dist"
+  }
+}

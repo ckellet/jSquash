@@ -1,0 +1,6 @@
+node_modules
+package-lock.json
+# Benchmark runs are machine-specific; keep them out of the repository and
+# pass them around with --out / --compare instead.
+*.json
+!package.json

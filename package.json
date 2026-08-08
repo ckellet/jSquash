@@ -9,7 +9,9 @@
   "scripts": {
     "build": "turbo run build",
     "lint": "prettier -l \"packages/**/*.{js,ts}\" test/**/*.ts && eslint \"packages/**/*.{js,ts}\"",
-    "format": "prettier -lw \"packages/**/*.{js,ts}\" test/**/*.ts"
+    "format": "prettier -lw \"packages/**/*.{js,ts}\" test/**/*.ts",
+    "bench": "cd bench && npm install --silent && node bench.mjs",
+    "test": "cd test && npm install --silent && npm test"
   },
   "license": "Apache-2.0",
   "devDependencies": {
