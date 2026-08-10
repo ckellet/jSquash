@@ -1,3 +1,78 @@
+# jSquash 🥝 — Kedos fork
+
+> **This is a fork of [jamsinclair/jSquash](https://github.com/jamsinclair/jSquash), tuned for edge and serverless runtimes.**
+> Upstream's README follows below and still applies — everything here is additive.
+
+## Why this fork exists
+
+Most of the work is about WebAssembly SIMD, which has been universally available
+since 2021 but was barely used here: **the decoders had none at all, in any
+format**, and JPEG had none on either side. Measured against upstream, same
+input, byte-identical output, SSIM unchanged throughout:
+
+| codec | encode | decode |
+| --- | --- | --- |
+| jxl | **−66%** | **−54%** |
+| png | **−41%** | −36% |
+| avif | **−33%** | −19% |
+| webp | ~flat | **−46%** |
+| qoi | — | **−36%** |
+| jpeg | **−15%** | −4% |
+
+Not one of those speedups was paid for in image quality — every encoder produces
+the same bytes it did before.
+
+Three things here are not in upstream at all:
+
+- **`dispose()` on every package.** Emscripten heaps grow and never shrink, so a
+  long-lived Worker or isolate holds its peak allocation for the rest of its
+  life. This hands the memory back. For the Rust-backed packages it needed a
+  patch to the generated glue, because wasm-bindgen pins the instance in module
+  scope with no way to release it.
+- **Single-variant entry points.** `encode-simd`, `encode-mt`, `encode-scalar`
+  and their decode equivalents each bind one build statically, so a bundler
+  emits one `.wasm` instead of every candidate the runtime dispatch could
+  reach. For a Cloudflare Workers deployment using AVIF, JXL and WebP that is
+  19.95 MB of wasm down to 8.41 MB. (Upstream issue
+  [#33](https://github.com/jamsinclair/jSquash/issues/33).)
+- **ICC colour profile support** across PNG, WebP, JPEG and AVIF, with profiles
+  verified to survive byte-identically *between* codecs. Previously a Display P3
+  image round-tripped as sRGB — numbers preserved, meaning lost. See
+  [docs/colour-management.md](docs/colour-management.md). (Upstream issue
+  [#5](https://github.com/jamsinclair/jSquash/issues/5).)
+
+Also: a benchmark and quality harness in [bench/](bench/) that reports time,
+size and SSIM together and refuses to record timings from a loaded machine
+(upstream issue [#46](https://github.com/jamsinclair/jSquash/issues/46)), and a
+modernised toolchain — Emscripten 4.0.16 (the first release published for
+arm64), MozJPEG 4.1.5, libwebp 1.6.0.
+
+## What this fork does not offer
+
+- **It is not published to npm.** Consume it as a git dependency; see
+  [DIST-BRANCH.md](https://github.com/ckellet/jSquash/blob/kedos-dist/DIST-BRANCH.md)
+  on the `kedos-dist` branch. pnpm supports subdirectory git dependencies; npm
+  does not.
+- **No support commitment.** This exists because we needed it in production. It
+  is offered as-is.
+- **JXL ICC is deliberately partial** — `readIccProfile` only. Writing profiles,
+  and returning untransformed pixels, are not correctly implementable at the
+  pinned libjxl; the reasoning is in the design doc rather than left as a TODO.
+
+## Upstreaming
+
+The bug fixes here are offered back:
+[#108](https://github.com/jamsinclair/jSquash/pull/108),
+[#109](https://github.com/jamsinclair/jSquash/pull/109),
+[#110](https://github.com/jamsinclair/jSquash/pull/110),
+[#111](https://github.com/jamsinclair/jSquash/pull/111).
+If they land, and the codec work follows, this fork should stop being necessary.
+
+`main` here tracks upstream unchanged so rebasing stays clean; the work lives on
+`kedos`, which is the default branch.
+
+---
+
 # jSquash 🥝
 
 > Collection of WebAssembly image codecs that support the browser and are derived from the [Squoosh App](https://github.com/GoogleChromeLabs/squoosh)
