@@ -86,9 +86,9 @@ amount of data, and the returns diminish quickly.
 
 ### What it costs everyone
 
-Zopfli is compiled into the wasm whether or not you enable it, which takes the
-single-threaded build from 77.0 KB to 104.1 KB brotli, and the threaded one
-from 102.6 KB to 129.5 KB.
+Zopfli is compiled into the wasm whether or not you enable it. Together with
+the oxipng v10 update it takes the single-threaded build from 77.0 KB to
+106.2 KB brotli, and the threaded one from 102.6 KB to 131.1 KB.
 
 ## Activate Multithreading
 

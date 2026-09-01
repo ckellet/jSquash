@@ -16,7 +16,7 @@ crate-type = ["cdylib"]
 # turns off along with the CLI and rayon. It is the only way to reach
 # `Deflaters::Zopfli`, and it is opt-in at the API, so it costs callers who
 # do not ask for it nothing but binary size.
-oxipng = { version = "9.0", default-features = false, features = ["freestanding", "zopfli"] }
+oxipng = { version = "10.2", default-features = false, features = ["freestanding", "zopfli"] }
 wasm-bindgen = "0.2.92"
 log = { version = "0.4.11", features = ["release_max_level_off"] }
 wasm-bindgen-rayon = { version = "1.2.1", optional = true }

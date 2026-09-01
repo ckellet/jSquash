@@ -17,9 +17,13 @@
 
 ### Changed
 
-- The wasm is larger: 77.0 KB to 104.1 KB brotli on the single-threaded build,
-  102.6 KB to 129.5 KB on the threaded one. Zopfli is compiled in whether or
-  not a caller enables it.
+- Updates oxipng to v10.2.0, from v9.1.1. Output is unchanged at `level: 2`
+  and never larger at `level: 3`, where it is also markedly faster - measured
+  on 1024x768 images, level 3 takes 47-60% less time, and one case came out
+  4.6% smaller. Decoded pixels identical throughout.
+- The wasm is larger: 77.0 KB to 106.2 KB brotli on the single-threaded build,
+  102.6 KB to 131.1 KB on the threaded one. Most of that is Zopfli, which is
+  compiled in whether or not a caller enables it; the rest is oxipng v10.
 
 ## @jsquash/oxipng@2.3.0
 
