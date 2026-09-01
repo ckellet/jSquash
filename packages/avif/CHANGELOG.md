@@ -20,13 +20,22 @@
 
 ### Changed
 
-- **AVIF decoding is ~48% faster**, with byte-identical output. Most of that is
-  building libaom without `CONFIG_ACCOUNTING`, which Squoosh had enabled: it is
-  off by default upstream, is only readable through the inspection API this
-  build already disables, and costs a null check plus two counter increments on
-  every read in the entropy decoder - the hottest loop in AV1 decoding. The
-  rest is a new SIMD decoder build, which the package previously lacked
-  entirely.
+- **AVIF decoding is ~65% faster and the decoder is 47% smaller**, with
+  byte-identical pixels at 8, 10 and 12 bits. Three changes, measured
+  separately:
+    - Decoding now uses **dav1d** rather than libaom. It is a decoder-only AV1
+      implementation, so it carries none of the encoder: 1.17 MB to 616 KB
+      (267 KB to 193 KB brotli), and 30-33% quicker than the tuned libaom
+      decoder. libaom is still the encoder.
+    - libaom is built without `CONFIG_ACCOUNTING`, which Squoosh had enabled.
+      It is off by default upstream and only readable through the inspection
+      API this build already disables, but it costs a null check and two
+      counter increments on every read in the entropy decoder. Worth 34% on
+      its own; it no longer affects the shipped decoder, but still applies to
+      anyone building the libaom one.
+    - A SIMD decoder build, which the package previously lacked entirely, so
+      Node and Cloudflare Workers decoded on scalar code despite supporting
+      SIMD.
 - The encoder now takes its pixels through the wasm heap rather than embind's
   `std::string` binding, which copied the input a byte at a time from JS. This
   is internal to the package; `encode`'s signature is unchanged.

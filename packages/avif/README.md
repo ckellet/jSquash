@@ -173,8 +173,13 @@ Note these variants have no fallback. `encode-mt` will not load without
 is served with — otherwise stay on `encode.js` or `encode-simd`.
 
 The decoder ships as two builds — SIMD and baseline — and `decode.js` picks
-between them the same way. There is no multithreaded decoder: libaom's decoder
-is built without threads here.
+between them the same way. There is no multithreaded decoder: dav1d is built
+without threads here.
+
+Decoding uses **dav1d** rather than libaom. It is a decoder-only AV1
+implementation, so it carries none of the encoder, and it is both smaller and
+faster: 616 KB against 1.33 MB, and 30-33% quicker, for byte-identical pixels
+at 8, 10 and 12 bits.
 
 | Import | Build | Use when |
 | --- | --- | --- |
@@ -196,6 +201,14 @@ The generated glue code takes care of this and supports most web bundlers.
 One situation where this arises is when using the modules in Cloudflare Workers ([See the README for more info](/README.md#usage-in-cloudflare-workers)).
 
 The `encode` and `decode` modules both export an `init` function that can be used to manually load the wasm module.
+
+> ⚠️ **Pass the binary that matches the build the module loaded.** `encode.js`
+> and `decode.js` choose a build at runtime, and an Emscripten module's exports
+> are positional — hand the SIMD glue the baseline `.wasm` and every binding
+> resolves to the wrong slot, which surfaces as `module.decode is not a
+> function` rather than a load error. If you are supplying the wasm yourself,
+> prefer a single-variant entry point such as `@jsquash/avif/decode-simd`,
+> where there is only one binary it can mean.
 
 ```js
 import decode, { init as initAvifDecode } from '@jsquash/avif/decode';

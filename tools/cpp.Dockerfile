@@ -17,7 +17,16 @@ ARG DEFAULT_EMSCRIPTEN_SETTINGS="\
 -s TEXTDECODER=1 \
 "
 
-RUN apt-get update && apt-get install -qqy autoconf libtool pkg-config
+# autoconf/libtool/pkg-config are for MozJPEG; ninja and meson are for dav1d,
+# which is the only meson project here. Keep pkg-config: MozJPEG's configure
+# needs it, and dropping it fails that build rather than this one.
+RUN apt-get update \
+  && apt-get install -qqy autoconf libtool pkg-config ninja-build python3-pip \
+  && rm -rf /var/lib/apt/lists/*
+
+# meson comes from pip rather than apt so the version does not drift with the
+# base image; dav1d wants a newer one than Ubuntu 22.04 ships.
+RUN pip3 install meson
 
 ENV CFLAGS="${DEFAULT_CFLAGS}"
 ENV CXXFLAGS="${CFLAGS} ${DEFAULT_CXX_FLAGS}"

@@ -22,7 +22,13 @@ import {
 } from '@jsquash/png/decode.js';
 
 const AVIF_ENC_WASM = 'node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm';
-const AVIF_DEC_WASM = 'node_modules/@jsquash/avif/codec/dec/avif_dec.wasm';
+// `decode.js` picks a build at runtime and Node has SIMD, so it loads the SIMD
+// glue - and an Emscripten module's exports are positional, so handing that
+// glue the baseline binary resolves every binding to the wrong slot and fails
+// silently. Glue and wasm have to be paired.
+const AVIF_DEC_WASM = 'node_modules/@jsquash/avif/codec/dec/avif_dec_simd.wasm';
+const AVIF_DEC_SCALAR_WASM =
+  'node_modules/@jsquash/avif/codec/dec/avif_dec.wasm';
 const PNG_WASM = 'node_modules/@jsquash/png/codec/pkg/squoosh_png_bg.wasm';
 
 const signatureOf = (icc: Uint8Array) =>
@@ -60,7 +66,7 @@ const solidImage = (width = 16, height = 16) => {
 test('can successfully decode image', async (t) => {
   const [testImage, decodeWasmModule] = await Promise.all([
     getFixturesImage('test.avif'),
-    importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
+    importWasmModule(AVIF_DEC_WASM),
   ]);
   initDecode(decodeWasmModule);
   const data = await decode(testImage);
@@ -76,7 +82,7 @@ test('can successfully decode image', async (t) => {
 test('can successfully decode 10-bit image', async (t) => {
   const [testImage, decodeWasmModule] = await Promise.all([
     getFixturesImage('test-10bit.avif'),
-    importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
+    importWasmModule(AVIF_DEC_WASM),
   ]);
   initDecode(decodeWasmModule);
   const data = decoded(await decode(testImage, { bitDepth: 10 }));
@@ -99,7 +105,7 @@ test('can successfully decode 10-bit image', async (t) => {
 test('can successfully decode 12-bit image', async (t) => {
   const [testImage, decodeWasmModule] = await Promise.all([
     getFixturesImage('test-12bit.avif'),
-    importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
+    importWasmModule(AVIF_DEC_WASM),
   ]);
   initDecode(decodeWasmModule);
   const data = decoded(await decode(testImage, { bitDepth: 12 }));
@@ -122,7 +128,7 @@ test('can successfully decode 12-bit image', async (t) => {
 test('can successfully decode 12-bit image to 10-bit precision', async (t) => {
   const [testImage, decodeWasmModule] = await Promise.all([
     getFixturesImage('test-12bit.avif'),
-    importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
+    importWasmModule(AVIF_DEC_WASM),
   ]);
   initDecode(decodeWasmModule);
   const data = decoded(await decode(testImage, { bitDepth: 10 }));
@@ -145,7 +151,7 @@ test('can successfully decode 12-bit image to 10-bit precision', async (t) => {
 test('can successfully decode 12-bit image to 8-bit precision', async (t) => {
   const [testImage, decodeWasmModule] = await Promise.all([
     getFixturesImage('test-12bit.avif'),
-    importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
+    importWasmModule(AVIF_DEC_WASM),
   ]);
   initDecode(decodeWasmModule);
   const data = await decode(testImage);
@@ -169,7 +175,7 @@ test('can successfully decode 12-bit image to 8-bit precision', async (t) => {
 test('can successfully decode 10-bit image to 8-bit precision', async (t) => {
   const [testImage, decodeWasmModule] = await Promise.all([
     getFixturesImage('test-10bit.avif'),
-    importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
+    importWasmModule(AVIF_DEC_WASM),
   ]);
   initDecode(decodeWasmModule);
   const data = await decode(testImage);
@@ -298,7 +304,7 @@ test('throws error when encoding 12-bit image with non-Uint16Array data', async 
 test('can successfully encode and decode lossless image', async (t) => {
   const [encodeWasmModule, decodeWasmModule] = await Promise.all([
     importWasmModule('node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm'),
-    importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
+    importWasmModule(AVIF_DEC_WASM),
   ]);
   await initEncode(encodeWasmModule);
   initDecode(decodeWasmModule);
@@ -335,7 +341,7 @@ test('can successfully encode and decode lossless image', async (t) => {
 test('encodes lossless even with conflicting quality option', async (t) => {
   const [encodeWasmModule, decodeWasmModule] = await Promise.all([
     importWasmModule('node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm'),
-    importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
+    importWasmModule(AVIF_DEC_WASM),
   ]);
   await initEncode(encodeWasmModule);
   initDecode(decodeWasmModule);
@@ -373,7 +379,7 @@ test('encodes lossless even with conflicting quality option', async (t) => {
 test('encodes lossless (YUV444) even with conflicting subsample option', async (t) => {
   const [encodeWasmModule, decodeWasmModule] = await Promise.all([
     importWasmModule('node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm'),
-    importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
+    importWasmModule(AVIF_DEC_WASM),
   ]);
   await initEncode(encodeWasmModule);
   initDecode(decodeWasmModule);
@@ -417,7 +423,7 @@ test('encodes lossless (YUV444) even with conflicting subsample option', async (
 test('encode-simd.js encodes and round-trips through the decoder', async (t) => {
   const [encodeWasmModule, decodeWasmModule] = await Promise.all([
     importWasmModule('node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm'),
-    importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
+    importWasmModule(AVIF_DEC_WASM),
   ]);
   await initEncodeSimd(encodeWasmModule);
   initDecode(decodeWasmModule);
@@ -455,9 +461,9 @@ test('encode-simd.js encodes and round-trips through the decoder', async (t) => 
 // either one.
 test('decode-simd.js and decode-scalar.js both round-trip losslessly', async (t) => {
   const [encodeWasmModule, decSimdWasm, decScalarWasm] = await Promise.all([
-    importWasmModule('node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm'),
-    importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec_simd.wasm'),
-    importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
+    importWasmModule(AVIF_ENC_WASM),
+    importWasmModule(AVIF_DEC_WASM),
+    importWasmModule(AVIF_DEC_SCALAR_WASM),
   ]);
   await initEncode(encodeWasmModule);
   initDecodeSimd(decSimdWasm);

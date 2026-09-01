@@ -37,7 +37,21 @@ $(OUT_JS): $(LIBSHARPYUV)
 $(CODEC_OUT): $(LIBSHARPYUV)
 endif
 
-$(OUT_JS): $(OUT_CPP) $(LIBAOM_OUT) $(CODEC_OUT)
+ifeq ($(USE_DAV1D),1)
+$(OUT_JS): $(LIBDAV1D_OUT)
+$(CODEC_OUT): $(LIBDAV1D_OUT)
+endif
+
+# A dav1d build links no libaom at all - that is the whole point of it - so the
+# dependency and the link line are both conditional. USE_DAV1D also switches
+# the libavif configure below, which otherwise insists on an AOM_LIBRARY.
+ifeq ($(USE_DAV1D),1)
+AVIF_CODEC_LIB :=
+else
+AVIF_CODEC_LIB := $(LIBAOM_OUT)
+endif
+
+$(OUT_JS): $(OUT_CPP) $(AVIF_CODEC_LIB) $(CODEC_OUT)
 	$(CXX) \
 		-I $(CODEC_DIR)/include \
 		$(CXXFLAGS) \
@@ -57,14 +71,20 @@ $(OUT_JS): $(OUT_CPP) $(LIBAOM_OUT) $(CODEC_OUT)
 		-o $@ \
 		$+
 
-$(CODEC_OUT): $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_OUT)
+# The aom options are only meaningful for an aom build; a dav1d build passes
+# its own codec selection through LIBAVIF_FLAGS instead.
+ifeq ($(USE_DAV1D),1)
+AVIF_CODEC_CMAKE_FLAGS :=
+else
+AVIF_CODEC_CMAKE_FLAGS := -DAVIF_CODEC_AOM=1 -DAOM_LIBRARY=$(LIBAOM_OUT) -DAOM_INCLUDE_DIR=$(LIBAOM_DIR)
+endif
+
+$(CODEC_OUT): $(CODEC_DIR)/CMakeLists.txt $(AVIF_CODEC_LIB)
 	emcmake cmake \
 		-DCMAKE_LIBRARY_PATH=$(LIBSHARPYUV_BUILD_DIR) \
 		-DCMAKE_BUILD_TYPE=Release \
 		-DBUILD_SHARED_LIBS=0 \
-		-DAVIF_CODEC_AOM=1 \
-		-DAOM_LIBRARY=$(LIBAOM_OUT) \
-		-DAOM_INCLUDE_DIR=$(LIBAOM_DIR) \
+		$(AVIF_CODEC_CMAKE_FLAGS) \
 		$(LIBAVIF_FLAGS) \
 		-B $(CODEC_BUILD_DIR) \
 		$(CODEC_DIR) && \
@@ -99,4 +119,4 @@ $(LIBAOM_OUT): $(LIBAOM_DIR)/CMakeLists.txt
 clean:
 	$(RM) $(OUT_JS) $(OUT_WASM) $(OUT_WORKER)
 	$(MAKE) -C $(CODEC_BUILD_DIR) clean
-	$(MAKE) -C $(LIBAOM_BUILD_DIR) clean
+	if [ -d $(LIBAOM_BUILD_DIR) ]; then $(MAKE) -C $(LIBAOM_BUILD_DIR) clean; fi

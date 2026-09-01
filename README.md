@@ -14,7 +14,7 @@ input, byte-identical output, SSIM unchanged throughout:
 | --- | --- | --- |
 | jxl | **−66%** | **−54%** |
 | png | **−41%** | −36% |
-| avif | **−33%** | **−48%** |
+| avif | **−33%** | **−65%** |
 | webp | ~flat | **−46%** |
 | qoi | — | **−36%** |
 | jpeg | **−15%** | −4% |
@@ -33,7 +33,7 @@ Three things here are not in upstream at all:
   and their decode equivalents each bind one build statically, so a bundler
   emits one `.wasm` instead of every candidate the runtime dispatch could
   reach. For a Cloudflare Workers deployment using AVIF, JXL and WebP that is
-  24.04 MB of wasm down to 10.58 MB. (Upstream issue
+  22.68 MB of wasm down to 9.89 MB. (Upstream issue
   [#33](https://github.com/jamsinclair/jSquash/issues/33).)
 - **ICC colour profile support** across PNG, WebP, JPEG and AVIF, with profiles
   verified to survive byte-identically *between* codecs. Previously a Display P3
@@ -91,7 +91,7 @@ jSquash name is inspired by jQuery and Squoosh. It symbolizes the browser suppor
 
 ## Packages
 
-- [@jSquash/avif](/packages/avif) - An encoder and decoder for AVIF images using the [libavif](https://github.com/AOMediaCodec/libavif) library
+- [@jSquash/avif](/packages/avif) - An encoder and decoder for AVIF images using the [libavif](https://github.com/AOMediaCodec/libavif) library, encoding with [libaom](https://aomedia.googlesource.com/aom) and decoding with [dav1d](https://code.videolan.org/videolan/dav1d)
 - [@jSquash/jpeg](/packages/jpeg) - An encoder and decoder for JPEG images using the [MozJPEG](https://github.com/mozilla/mozjpeg) library
 - [@jSquash/jxl](/packages/jxl) - An encoder and decoder for JPEG XL images using the [libjxl](https://github.com/libjxl/libjxl) library
 - [@jSquash/oxipng](/packages/oxipng) - A PNG image optimiser using [Oxipng](https://github.com/shssoichiro/oxipng)
@@ -175,6 +175,9 @@ order of magnitude on a build the size of libaom.
 Rust codecs build through `tools/build-rust.sh`, which pins the image in
 `tools/rust.Dockerfile` and compiles with `-C target-feature=+simd128`.
 
+dav1d, which AVIF decodes with, is the one meson project here rather than
+cmake or autotools, so the C++ image also carries meson and ninja.
+
 ### SIMD and thread variants
 
 Several codecs ship more than one binary and pick between them at runtime:
@@ -191,7 +194,7 @@ falls back to a binary with no SIMD either.
 
 ### Known trade-offs
 
-- **The wasm payload grew from 15.0 MB to 25.6 MB, and single-variant entry
+- **The wasm payload grew from 15.0 MB to 24.2 MB, and single-variant entry
   points are how you avoid paying for it.** The SIMD builds that made AVIF and
   JXL two to three times faster are not free, and 6.5 MB of the total is
   threaded builds that need `SharedArrayBuffer` - so they can never load under
@@ -208,7 +211,7 @@ falls back to a binary with no SIMD either.
   ```
 
   For a Node or Workers deployment using AVIF, JXL and WebP - encoder and
-  decoder for each - that is **24.04 MB of wasm down to 10.58 MB**, summing the
+  decoder for each - that is **22.68 MB of wasm down to 9.89 MB**, summing the
   committed `.wasm` files a bundler would emit for each route. See each
   package's README for the full list; `-simd` suits anything current, `-mt` a
   cross-origin-isolated browser, and `-scalar` a runtime without SIMD.
@@ -224,20 +227,26 @@ falls back to a binary with no SIMD either.
   inside run-to-run noise - while `-O2`/`-O3` add ~8% to the binary. libaom's
   hot loops are memory-bound and already hand-tuned, so the extra inlining
   buys nothing. `-Oz` is the best point on the curve, not a trade-off.
-- **libaom's bit accounting is off, and that is where most of the AVIF decode
-  win came from.** Squoosh built libaom with `CONFIG_ACCOUNTING=1`, which is
-  not the upstream default and is only readable through the inspection API -
-  which the same build already disables. It is not free instrumentation: it
-  threads an extra `const char *` through every entropy-decoder read and adds a
-  null check plus two counter increments to each one. Those reads are the
-  hottest loop in AV1 decoding. Turning it off is **34% off decode time**,
-  measured interleaved at both 1024x768 and 2048x1536, for pixel-identical
-  output and a slightly smaller binary (1.17 MB to 1.15 MB).
-- **The AVIF decoder now has a SIMD build too.** It was the one binary in this
-  package with no SIMD variant at all, so Node, Cloudflare Workers and any page
-  without COOP/COEP decoded on scalar code despite supporting SIMD. Worth 4.2%
-  on decode for +180 KB raw, which is +20 KB brotli - the same shape of trade
-  as the SIMD encoder, at a tenth of the size cost.
+- **AVIF decodes with dav1d, not libaom, and that is most of the 65%.** dav1d
+  is a decoder-only AV1 implementation, so it carries none of libaom's
+  encoder, and on this workload it is both smaller and faster: the build that
+  actually loads goes from 1.17 MB to 616 KB (267 KB to 193 KB brotli) and
+  decodes 30-33% quicker than the tuned libaom decoder, for byte-identical
+  pixels at 8, 10 and 12 bits. libaom is still the encoder. Upstream had
+  prototyped this on the `avif-with-dav1d` branch; this is that idea rebuilt
+  on the current toolchain.
+- **libaom's bit accounting is off, which is the other half.** Squoosh built
+  libaom with `CONFIG_ACCOUNTING=1`, which is not the upstream default and is
+  only readable through the inspection API - which the same build already
+  disables. It is not free: it threads an extra `const char *` through every
+  entropy-decoder read and adds a null check plus two counter increments to
+  each one, in the hottest loop in AV1 decoding. Turning it off was 34% off
+  decode time on its own. It no longer affects the shipped decoder, since that
+  is dav1d, but it still applies to anyone building the libaom decoder.
+- **The AVIF decoder has SIMD and scalar builds**, like the other codecs.
+  dav1d's hand-written assembly is x86 and Arm only, so wasm gets its portable
+  C either way and `-msimd128` is what lets LLVM vectorise it: 616 KB and
+  85 ms against 438 KB and 95 ms at 2048x1536.
 - **libaom is built with `AOM_TARGET_CPU=generic`**, so AVIF gets no
   hand-written SIMD - only whatever the compiler autovectorises. That turns
   out to be a lot: the SIMD encoder build carries ~465k v128 instructions
