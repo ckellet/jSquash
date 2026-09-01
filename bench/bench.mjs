@@ -207,7 +207,7 @@ const CODECS = [
     // Node has no threads but does have SIMD, so the dispatch picks the SIMD
     // build; fall back to the plain one if it has not been built.
     enc: ['@jsquash/avif/codec/enc/avif_enc_simd.wasm', '@jsquash/avif/codec/enc/avif_enc.wasm'],
-    dec: ['@jsquash/avif/codec/dec/avif_dec.wasm'],
+    dec: ['@jsquash/avif/codec/dec/avif_dec_simd.wasm', '@jsquash/avif/codec/dec/avif_dec.wasm'],
   },
   {
     suite: 'jxl', spec: '@jsquash/jxl', opts: { quality: 75, effort: 5 },

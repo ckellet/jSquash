@@ -14,7 +14,7 @@ input, byte-identical output, SSIM unchanged throughout:
 | --- | --- | --- |
 | jxl | **−66%** | **−54%** |
 | png | **−41%** | −36% |
-| avif | **−33%** | −19% |
+| avif | **−33%** | **−48%** |
 | webp | ~flat | **−46%** |
 | qoi | — | **−36%** |
 | jpeg | **−15%** | −4% |
@@ -33,7 +33,7 @@ Three things here are not in upstream at all:
   and their decode equivalents each bind one build statically, so a bundler
   emits one `.wasm` instead of every candidate the runtime dispatch could
   reach. For a Cloudflare Workers deployment using AVIF, JXL and WebP that is
-  19.95 MB of wasm down to 8.41 MB. (Upstream issue
+  24.04 MB of wasm down to 10.58 MB. (Upstream issue
   [#33](https://github.com/jamsinclair/jSquash/issues/33).)
 - **ICC colour profile support** across PNG, WebP, JPEG and AVIF, with profiles
   verified to survive byte-identically *between* codecs. Previously a Display P3
@@ -191,7 +191,7 @@ falls back to a binary with no SIMD either.
 
 ### Known trade-offs
 
-- **The wasm payload grew from 15.0 MB to 24.2 MB, and single-variant entry
+- **The wasm payload grew from 15.0 MB to 25.5 MB, and single-variant entry
   points are how you avoid paying for it.** The SIMD builds that made AVIF and
   JXL two to three times faster are not free, and 6.5 MB of the total is
   threaded builds that need `SharedArrayBuffer` - so they can never load under
@@ -207,10 +207,11 @@ falls back to a binary with no SIMD either.
   import encode from '@jsquash/avif/encode-simd';   // bundles one
   ```
 
-  For a Node or Workers deployment using AVIF, JXL and WebP, that is **19.95 MB
-  of wasm down to 8.41 MB**. See each package's README for the full list;
-  `-simd` suits anything current, `-mt` a cross-origin-isolated browser, and
-  `-scalar` a runtime without SIMD.
+  For a Node or Workers deployment using AVIF, JXL and WebP - encoder and
+  decoder for each - that is **24.04 MB of wasm down to 10.58 MB**, summing the
+  committed `.wasm` files a bundler would emit for each route. See each
+  package's README for the full list; `-simd` suits anything current, `-mt` a
+  cross-origin-isolated browser, and `-scalar` a runtime without SIMD.
 
   The installed size is unchanged - every variant is still on disk after
   `npm install`, because the runtime dispatch has to be able to reach them.
@@ -223,6 +224,20 @@ falls back to a binary with no SIMD either.
   inside run-to-run noise - while `-O2`/`-O3` add ~8% to the binary. libaom's
   hot loops are memory-bound and already hand-tuned, so the extra inlining
   buys nothing. `-Oz` is the best point on the curve, not a trade-off.
+- **libaom's bit accounting is off, and that is where most of the AVIF decode
+  win came from.** Squoosh built libaom with `CONFIG_ACCOUNTING=1`, which is
+  not the upstream default and is only readable through the inspection API -
+  which the same build already disables. It is not free instrumentation: it
+  threads an extra `const char *` through every entropy-decoder read and adds a
+  null check plus two counter increments to each one. Those reads are the
+  hottest loop in AV1 decoding. Turning it off is **34% off decode time**,
+  measured interleaved at both 1024x768 and 2048x1536, for pixel-identical
+  output and a slightly smaller binary (1.17 MB to 1.15 MB).
+- **The AVIF decoder now has a SIMD build too.** It was the one binary in this
+  package with no SIMD variant at all, so Node, Cloudflare Workers and any page
+  without COOP/COEP decoded on scalar code despite supporting SIMD. Worth 4.2%
+  on decode for +180 KB raw, which is +20 KB brotli - the same shape of trade
+  as the SIMD encoder, at a tenth of the size cost.
 - **libaom is built with `AOM_TARGET_CPU=generic`**, so AVIF gets no
   hand-written SIMD - only whatever the compiler autovectorises. That turns
   out to be a lot: the SIMD encoder build carries ~465k v128 instructions

@@ -15,9 +15,18 @@
 - `decode` and `encode` are unchanged for callers who do not ask for metadata.
   Profiles are carried, never applied - see
   [docs/colour-management.md](/docs/colour-management.md).
+- `decode-simd` and `decode-scalar` single-variant entry points, matching the
+  encoder's. `decode` now picks between the two builds at runtime.
 
 ### Changed
 
+- **AVIF decoding is ~48% faster**, with byte-identical output. Most of that is
+  building libaom without `CONFIG_ACCOUNTING`, which Squoosh had enabled: it is
+  off by default upstream, is only readable through the inspection API this
+  build already disables, and costs a null check plus two counter increments on
+  every read in the entropy decoder - the hottest loop in AV1 decoding. The
+  rest is a new SIMD decoder build, which the package previously lacked
+  entirely.
 - The encoder now takes its pixels through the wasm heap rather than embind's
   `std::string` binding, which copied the input a byte at a time from JS. This
   is internal to the package; `encode`'s signature is unchanged.

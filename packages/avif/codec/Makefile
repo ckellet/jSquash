@@ -24,6 +24,7 @@ OUT_ENC_JS = enc/avif_enc.js
 OUT_ENC_SIMD_JS = enc/avif_enc_simd.js
 OUT_ENC_MT_JS = enc/avif_enc_mt.js
 OUT_DEC_JS = dec/avif_dec.js
+OUT_DEC_SIMD_JS = dec/avif_dec_simd.js
 
 OUT_ENC_CPP = enc/avif_enc.cpp
 OUT_DEC_CPP = dec/avif_dec.cpp
@@ -33,7 +34,7 @@ HELPER_MAKEFLAGS := -f helper.Makefile
 
 .PHONY: all clean
 
-all: $(OUT_ENC_JS) $(OUT_ENC_SIMD_JS) $(OUT_DEC_JS) $(OUT_ENC_MT_JS)
+all: $(OUT_ENC_JS) $(OUT_ENC_SIMD_JS) $(OUT_DEC_JS) $(OUT_DEC_SIMD_JS) $(OUT_ENC_MT_JS)
 
 # ST-Encoding
 $(OUT_ENC_JS): $(OUT_ENC_CPP) $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_DIR)/CMakeLists.txt $(LIBSHARPYUV_ST)
@@ -101,6 +102,30 @@ $(OUT_DEC_JS): $(OUT_DEC_CPP) $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_DIR)/CMakeLis
 		$(HELPER_MAKEFLAGS) \
 		OUT_JS=$@ \
 		OUT_CPP=$< \
+		STACK_SIZE=5242880 \
+		INITIAL_MEMORY_SIZE=16777216 \
+		LIBAOM_FLAGS="\
+			-DCONFIG_AV1_ENCODER=0 \
+			-DCONFIG_AV1_HIGHBITDEPTH=1 \
+			-DCONFIG_MULTITHREAD=0 \
+		" \
+		ENVIRONMENT=$(ENVIRONMENT) \
+		LIBAVIF_FLAGS="-DAVIF_CODEC_AOM_ENCODE=0"
+
+# SIMD-Decoding
+# The decoder was the one build in this package with no SIMD variant at all,
+# so a runtime without threads - Node, Cloudflare Workers, a page without
+# COOP/COEP - decoded AVIF on scalar code even though every one of them
+# supports SIMD. Same reasoning as the SIMD encoder above: libaom is built
+# for a generic target, so this is autovectorisation of the portable C rather
+# than hand-written intrinsics.
+$(OUT_DEC_SIMD_JS): $(OUT_DEC_CPP) $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_DIR)/CMakeLists.txt
+	$(MAKE) \
+		$(HELPER_MAKEFLAGS) \
+		OUT_JS=$@ \
+		OUT_CPP=$< \
+		CFLAGS="$(CFLAGS) -msimd128" \
+		CXXFLAGS="$(CXXFLAGS) -msimd128" \
 		STACK_SIZE=5242880 \
 		INITIAL_MEMORY_SIZE=16777216 \
 		LIBAOM_FLAGS="\
@@ -184,6 +209,7 @@ $(LIBSHARPYUV_MT): $(LIBWEBP_DIR)/CMakeLists.txt
 
 clean:
 	$(MAKE) $(HELPER_MAKEFLAGS) OUT_JS=$(OUT_DEC_JS) clean
+	$(MAKE) $(HELPER_MAKEFLAGS) OUT_JS=$(OUT_DEC_SIMD_JS) clean
 	$(MAKE) $(HELPER_MAKEFLAGS) OUT_JS=$(OUT_ENC_JS) clean
 	$(MAKE) $(HELPER_MAKEFLAGS) OUT_JS=$(OUT_ENC_SIMD_JS) clean
 	$(MAKE) $(HELPER_MAKEFLAGS) OUT_JS=$(OUT_ENC_MT_JS) clean

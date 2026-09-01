@@ -137,7 +137,7 @@ By default, the encode function will use a single thread to encode the image. If
 
 This will still only take effect in browsers and devices that support multithreading. If the browser does not support it, it will fallback to single threaded mode
 
-## Choosing a single encoder build
+## Choosing a single encoder or decoder build
 
 The encoder ships as three WebAssembly builds — multithreaded, SIMD and
 baseline. `encode.js` picks between them at runtime, which is the right default
@@ -172,7 +172,21 @@ Note these variants have no fallback. `encode-mt` will not load without
 `SharedArrayBuffer`, so only reach for it if you control the headers your page
 is served with — otherwise stay on `encode.js` or `encode-simd`.
 
-The decoder has only one build, so `decode.js` has no variants.
+The decoder ships as two builds — SIMD and baseline — and `decode.js` picks
+between them the same way. There is no multithreaded decoder: libaom's decoder
+is built without threads here.
+
+| Import | Build | Use when |
+| --- | --- | --- |
+| `@jsquash/avif/decode` | picked at runtime | You don't know the target, and don't mind shipping both |
+| `@jsquash/avif/decode-simd` | SIMD | Anything current — see above |
+| `@jsquash/avif/decode-scalar` | baseline | You must support a runtime without WebAssembly SIMD |
+
+```js
+import decode, { init, dispose } from '@jsquash/avif/decode-simd';
+
+const imageData = await decode(avifBuffer);
+```
 
 ## Manual WASM initialisation (not recommended)
 

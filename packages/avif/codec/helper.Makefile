@@ -70,6 +70,14 @@ $(CODEC_OUT): $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_OUT)
 		$(CODEC_DIR) && \
 	$(MAKE) -C $(CODEC_BUILD_DIR)
 
+# CONFIG_ACCOUNTING is libaom's bit-accounting instrumentation. It defaults to
+# 0 upstream and is only readable through the inspection API, which is off
+# below - but it is not free when it is on: it threads an extra `const char *`
+# through every entropy-decoder read and adds a null check plus two counter
+# increments to each one. Those reads (`aom_read_symbol` and friends in
+# aom_dsp/bitreader.h) are the hottest loop in AV1 decoding, and every call
+# site also carries a string literal into rodata. Squoosh shipped it on; it
+# buys this package nothing.
 $(LIBAOM_OUT): $(LIBAOM_DIR)/CMakeLists.txt
 	emcmake cmake \
 		-DCMAKE_BUILD_TYPE=Release \
@@ -79,7 +87,7 @@ $(LIBAOM_OUT): $(LIBAOM_DIR)/CMakeLists.txt
 		-DENABLE_TESTS=0 \
 		-DENABLE_EXAMPLES=0 \
 		-DENABLE_TOOLS=0 \
-		-DCONFIG_ACCOUNTING=1 \
+		-DCONFIG_ACCOUNTING=0 \
 		-DCONFIG_INSPECTION=0 \
 		-DCONFIG_RUNTIME_CPU_DETECT=0 \
 		-DCONFIG_WEBM_IO=0 \

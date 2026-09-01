@@ -12,22 +12,14 @@
  */
 
 /**
- * Notice: I (Jamie Sinclair) have copied this code from the JPEG encode module
- * and modified it to decode JPEG images.
+ * AVIF decoder bound to the SIMD build. See './encode-simd.js' for the
+ * rationale.
  */
-import { simd } from 'wasm-feature-detect';
+import codec from './codec/dec/avif_dec_simd.js';
 import { createDecoder } from './decode-core.js';
 
-// libaom is built for a generic target, so the SIMD build is autovectorisation
-// of the portable C rather than hand-written intrinsics - but it is still
-// worth 4% on decode. Import './decode-simd.js' to commit to that build and
-// avoid shipping the baseline one alongside it.
 const { init, dispose, decode, decodeWithMetadata, readIccProfile } =
-  createDecoder(async () =>
-    (await simd())
-      ? (await import('./codec/dec/avif_dec_simd.js')).default
-      : (await import('./codec/dec/avif_dec.js')).default,
-  );
+  createDecoder(async () => codec);
 
 export { init, dispose, decodeWithMetadata, readIccProfile };
 export type { DecodedImage, ImageMetadata, ImageData16bit } from './meta.js';

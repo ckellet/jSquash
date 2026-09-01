@@ -10,6 +10,12 @@ import encode, { init as initEncode } from '@jsquash/avif/encode.js';
 import encodeSimd, {
   init as initEncodeSimd,
 } from '@jsquash/avif/encode-simd.js';
+import decodeSimd, {
+  init as initDecodeSimd,
+} from '@jsquash/avif/decode-simd.js';
+import decodeScalar, {
+  init as initDecodeScalar,
+} from '@jsquash/avif/decode-scalar.js';
 import {
   init as initPngDecode,
   readIccProfile as readPngIccProfile,
@@ -440,6 +446,50 @@ test('encode-simd.js encodes and round-trips through the decoder', async (t) => 
     decodedData.data,
     originalImageData.data,
     'Decoded data should match what encode-simd.js produced',
+  );
+});
+
+// Each single-variant decoder holds its own module and binds a different
+// binary, so both are given their own wasm. They are separate builds of the
+// same source, so a lossless round trip has to come back exactly equal through
+// either one.
+test('decode-simd.js and decode-scalar.js both round-trip losslessly', async (t) => {
+  const [encodeWasmModule, decSimdWasm, decScalarWasm] = await Promise.all([
+    importWasmModule('node_modules/@jsquash/avif/codec/enc/avif_enc_simd.wasm'),
+    importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec_simd.wasm'),
+    importWasmModule('node_modules/@jsquash/avif/codec/dec/avif_dec.wasm'),
+  ]);
+  await initEncode(encodeWasmModule);
+  initDecodeSimd(decSimdWasm);
+  initDecodeScalar(decScalarWasm);
+
+  const originalImageData = {
+    width: 16,
+    height: 16,
+    data: new Uint8ClampedArray(4 * 16 * 16),
+    colorSpace: 'srgb' as const,
+  };
+  for (let i = 0; i < originalImageData.data.length; i += 4) {
+    originalImageData.data[i] = i % 256; // R
+    originalImageData.data[i + 1] = (i + 64) % 256; // G
+    originalImageData.data[i + 2] = (i + 128) % 256; // B
+    originalImageData.data[i + 3] = 255; // A
+  }
+
+  const encodedData = await encode(originalImageData, { lossless: true });
+
+  const viaSimd = decoded(await decodeSimd(encodedData));
+  const viaScalar = decoded(await decodeScalar(encodedData));
+
+  t.deepEqual(
+    viaSimd.data,
+    originalImageData.data,
+    'decode-simd.js should reproduce the original exactly',
+  );
+  t.deepEqual(
+    viaScalar.data,
+    viaSimd.data,
+    'the SIMD and scalar decoders must agree byte for byte',
   );
 });
 

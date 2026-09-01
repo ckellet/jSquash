@@ -50,7 +50,7 @@ const WASM = {
   // png's encoder and decoder share one wasm-bindgen module.
   png:  { encode: ['codec/pkg/squoosh_png_bg.wasm'], decode: ['codec/pkg/squoosh_png_bg.wasm'] },
   avif: { encode: ['codec/enc/avif_enc_simd.wasm', 'codec/enc/avif_enc.wasm'],
-          decode: ['codec/dec/avif_dec.wasm'] },
+          decode: ['codec/dec/avif_dec_simd.wasm', 'codec/dec/avif_dec.wasm'] },
   jxl:  { encode: ['codec/enc/jxl_enc_simd.wasm', 'codec/enc/jxl_enc.wasm'],
           decode: ['codec/dec/jxl_dec_simd.wasm', 'codec/dec/jxl_dec.wasm'] },
 };
