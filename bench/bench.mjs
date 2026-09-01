@@ -263,11 +263,6 @@ if (wanted('oxipng')) {
         () => oxipng.default(encoded, { level }),
         { bytes: (buf) => buf.byteLength });
     }
-    // Zopfli is opt-in and costs far more time than a level step does, so it
-    // gets one row against the default level rather than a sweep of its own.
-    await record('oxipng', 'optimise level 2 +zopfli',
-      () => oxipng.default(encoded, { level: 2, zopfli: true }),
-      { bytes: (buf) => buf.byteLength });
     console.log(`  (source png: ${(encoded.byteLength / 1024).toFixed(1)} KiB)`);
   }
 }

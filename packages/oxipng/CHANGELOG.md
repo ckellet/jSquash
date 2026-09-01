@@ -2,28 +2,36 @@
 
 ## Unreleased
 
-### Added
-
-- `zopfli` and `zopfliIterations` options. Zopfli replaces libdeflate as the
-  deflate implementation. The output is an ordinary PNG that decodes to
-  identical pixels; only the compressed stream differs. Off by default;
-  oxipng's `zopfli` cargo feature had been disabled along with the rest of its
-  defaults, so this was previously unreachable.
-
-  How much it saves depends almost entirely on how compressible the image
-  already is - see the package README for measurements. It ranges from
-  negligible on noisy or textured content to very large on smooth content, and
-  always costs an order of magnitude or more in time.
-
 ### Changed
 
 - Updates oxipng to v10.2.0, from v9.1.1. Output is unchanged at `level: 2`
   and never larger at `level: 3`, where it is also markedly faster - measured
   on 1024x768 images, level 3 takes 47-60% less time, and one case came out
   4.6% smaller. Decoded pixels identical throughout.
-- The wasm is larger: 77.0 KB to 106.2 KB brotli on the single-threaded build,
-  102.6 KB to 131.1 KB on the threaded one. Most of that is Zopfli, which is
-  compiled in whether or not a caller enables it; the rest is oxipng v10.
+- The wasm grows with it: 77.0 KB to 82.4 KB brotli on the single-threaded
+  build, 102.6 KB to 107.5 KB on the threaded one.
+
+### Not included: Zopfli
+
+oxipng can deflate with Zopfli instead of libdeflate, and it is in the crate's
+default feature set. It was built and measured here, and deliberately left
+out. Recorded so it is not re-derived:
+
+- The win depends almost entirely on how compressible the image already is.
+  At 15 iterations, level 2, 1024x768: **-34%** on smooth gradients, but only
+  -1.1% on flat colour blocks, -0.7% on photographic texture and -0.2% on
+  noise. The large number is the outlier, not the rule.
+- It costs 10x to 96x the encode time - seconds per image of pure CPU with
+  nothing to overlap, which rules it out of a CPU-metered request path.
+- Turning the iteration count down does not rescue it. Below about 5
+  iterations Zopfli loses to libdeflate outright on anything that is not
+  highly compressible: at 1 iteration, +2.5% on photographic texture and
+  +2.1% on noise. Above 5 the curve is flat.
+- Enabling the feature added ~29 KB brotli to the wasm whether or not a caller
+  used it, because it is compiled in regardless.
+
+Worth revisiting only for an offline, build-time pipeline over assets that are
+known to be smooth-gradient-like.
 
 ## @jsquash/oxipng@2.3.0
 

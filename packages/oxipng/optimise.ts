@@ -105,14 +105,6 @@ export default async function optimise(
   const _options = { ...defaultOptions, ...options };
   const { optimise, optimise_raw } = await init();
 
-  // The wasm boundary takes a single iteration count, where 0 means "keep the
-  // preset's libdeflate deflater". Collapsing the two options here keeps that
-  // detail out of the public shape, where a boolean reads better than a
-  // magic zero.
-  const zopfliIterations = _options.zopfli
-    ? validateZopfliIterations(_options.zopfliIterations)
-    : 0;
-
   if (data instanceof ImageData) {
     return optimise_raw(
       data.data,
@@ -121,7 +113,6 @@ export default async function optimise(
       _options.level,
       _options.interlace,
       _options.optimiseAlpha,
-      zopfliIterations,
     ).buffer;
   }
 
@@ -130,21 +121,5 @@ export default async function optimise(
     _options.level,
     _options.interlace,
     _options.optimiseAlpha,
-    zopfliIterations,
   ).buffer;
-}
-
-/**
- * Zopfli's iteration count is a `NonZeroU8` on the other side of the boundary.
- * Rejecting out-of-range values here means the error names the option, rather
- * than surfacing as a wasm-bindgen conversion failure or, worse, wrapping
- * round to a value the caller did not ask for.
- */
-function validateZopfliIterations(iterations: number): number {
-  if (!Number.isInteger(iterations) || iterations < 1 || iterations > 255) {
-    throw new Error(
-      `zopfliIterations must be an integer between 1 and 255, got ${iterations}`,
-    );
-  }
-  return iterations;
 }

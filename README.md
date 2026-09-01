@@ -191,7 +191,7 @@ falls back to a binary with no SIMD either.
 
 ### Known trade-offs
 
-- **The wasm payload grew from 15.0 MB to 25.7 MB, and single-variant entry
+- **The wasm payload grew from 15.0 MB to 25.6 MB, and single-variant entry
   points are how you avoid paying for it.** The SIMD builds that made AVIF and
   JXL two to three times faster are not free, and 6.5 MB of the total is
   threaded builds that need `SharedArrayBuffer` - so they can never load under

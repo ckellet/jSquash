@@ -45,15 +45,14 @@ function getArrayU8FromWasm0(ptr, len) {
 * @param {number} level
 * @param {boolean} interlace
 * @param {boolean} optimize_alpha
-* @param {number} zopfli_iterations
 * @returns {Uint8Array}
 */
-export function optimise(data, level, interlace, optimize_alpha, zopfli_iterations) {
+export function optimise(data, level, interlace, optimize_alpha) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.optimise(retptr, ptr0, len0, level, interlace, optimize_alpha, zopfli_iterations);
+        wasm.optimise(retptr, ptr0, len0, level, interlace, optimize_alpha);
         var r0 = getInt32Memory0()[retptr / 4 + 0];
         var r1 = getInt32Memory0()[retptr / 4 + 1];
         var v2 = getArrayU8FromWasm0(r0, r1).slice();
@@ -71,15 +70,14 @@ export function optimise(data, level, interlace, optimize_alpha, zopfli_iteratio
 * @param {number} level
 * @param {boolean} interlace
 * @param {boolean} optimize_alpha
-* @param {number} zopfli_iterations
 * @returns {Uint8Array}
 */
-export function optimise_raw(data, width, height, level, interlace, optimize_alpha, zopfli_iterations) {
+export function optimise_raw(data, width, height, level, interlace, optimize_alpha) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.optimise_raw(retptr, ptr0, len0, width, height, level, interlace, optimize_alpha, zopfli_iterations);
+        wasm.optimise_raw(retptr, ptr0, len0, width, height, level, interlace, optimize_alpha);
         var r0 = getInt32Memory0()[retptr / 4 + 0];
         var r1 = getInt32Memory0()[retptr / 4 + 1];
         var v2 = getArrayU8FromWasm0(r0, r1).slice();
