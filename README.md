@@ -22,7 +22,16 @@ input, byte-identical output, SSIM unchanged throughout:
 Not one of those speedups was paid for in image quality — every encoder produces
 the same bytes it did before.
 
-Three things here are not in upstream at all:
+AVIF decode is the exception to the SIMD story. Most of its 65% comes from
+decoding with **dav1d** instead of libaom: dav1d is decoder-only, so it carries
+none of the encoder, and it is both smaller and faster — 1.17 MB down to
+616 KB, and a third quicker again than the tuned libaom decoder. The rest is
+libaom's bit accounting, which Squoosh had left switched on and which costs a
+null check and two counter increments on every read in the entropy decoder.
+Upstream prototyped dav1d on a branch in 2024; this is that idea rebuilt on the
+current toolchain.
+
+Four things here are not in upstream at all:
 
 - **`dispose()` on every package.** Emscripten heaps grow and never shrink, so a
   long-lived Worker or isolate holds its peak allocation for the rest of its
@@ -40,12 +49,19 @@ Three things here are not in upstream at all:
   image round-tripped as sRGB — numbers preserved, meaning lost. See
   [docs/colour-management.md](docs/colour-management.md). (Upstream issue
   [#5](https://github.com/jamsinclair/jSquash/issues/5).)
+- **A `compression` option on the PNG encoder.** `png` 0.18 made compression a
+  real setting; which end of it you want depends on whether you run the output
+  through `@jsquash/oxipng` afterwards, so it is the caller's choice rather
+  than a default someone else picked. `fastest` (the default, and what this
+  package has always produced) is 1.99 MB in 6.9 ms on the bench image;
+  `balanced` is 1.22 MB in 237 ms.
 
 Also: a benchmark and quality harness in [bench/](bench/) that reports time,
 size and SSIM together and refuses to record timings from a loaded machine
 (upstream issue [#46](https://github.com/jamsinclair/jSquash/issues/46)), and a
-modernised toolchain — Emscripten 4.0.16 (the first release published for
-arm64), MozJPEG 4.1.5, libwebp 1.6.0.
+modernised dependency set — Emscripten 4.0.16 (the first release published for
+arm64), MozJPEG 4.1.5, libwebp 1.6.0, dav1d 1.5.0, and the Rust codecs moved to
+oxipng 10.2, png 0.18 and resize 0.8.9 (from 0.5.5, five years behind).
 
 ## What this fork does not offer
 
@@ -172,11 +188,25 @@ the default; a codec that needs something else sets `EMSDK_VERSION` in its own
 amd64 only and run under emulation on Apple Silicon, which costs roughly an
 order of magnitude on a build the size of libaom.
 
-Rust codecs build through `tools/build-rust.sh`, which pins the image in
-`tools/rust.Dockerfile` and compiles with `-C target-feature=+simd128`.
-
 dav1d, which AVIF decodes with, is the one meson project here rather than
 cmake or autotools, so the C++ image also carries meson and ninja.
+
+Rust codecs build through `tools/build-rust.sh`, which pins the image in
+`tools/rust.Dockerfile` and compiles with `-C target-feature=+simd128`. That
+image also installs a nightly toolchain with `rust-src`: oxipng's threaded
+build compiles the standard library itself, with `-Z build-std`, so that std
+is built for the same `+atomics,+bulk-memory` target as the crate. rustup
+fetches a missing toolchain on demand but not a missing component, so without
+`rust-src` that build fails with only a suggestion to add it — and because
+`build.sh` clears its output directories first, the failure left no artefact
+behind rather than a stale one.
+
+The Rust build does not pass `--locked`. Cargo still resolves from the
+committed `Cargo.lock` and only rewrites what a changed `Cargo.toml` forces,
+so ordinary builds are reproducible; `--locked` additionally refused to build
+at all after a version bump, which made every dependency update need a bespoke
+invocation. The trade is that a stale lockfile is quietly updated rather than
+failing the build.
 
 ### SIMD and thread variants
 
@@ -259,16 +289,18 @@ falls back to a binary with no SIMD either.
   Three milliseconds against 4-11 ms saved on a ~100 ms encode, so it pays for
   itself even on a single-image serverless invocation.
 - **AVIF is pinned to libavif 1.0.1 / libaom 3.7.0, and that is deliberate.**
-  libavif 1.3.0 + libaom 3.12.1 was built and benchmarked, and it is not an
-  upgrade on these workloads: encode is ~18% slower at `speed: 8` and level
-  at `speed: 6`, for no measurable quality gain (identical SSIM, 0.4% larger
-  output). It does produce smaller binaries (encoder -4%, SIMD encoder -12%).
+  libaom is the encoder only; decoding is dav1d 1.5.0. libavif 1.3.0 + libaom
+  3.12.1 was built and benchmarked, and it is not an upgrade on these
+  workloads: encode is ~18% slower at `speed: 8` and level at `speed: 6`, for
+  no measurable quality gain (identical SSIM, 0.4% larger output). It does
+  produce smaller binaries (encoder -4%, SIMD encoder -12%).
   If it is revisited, note that libavif >= 1.1 replaced its boolean
   dependency options with `LOCAL`/`SYSTEM`/`OFF`, so the build needs
   `-DAVIF_CODEC_AOM=SYSTEM`, `-DAVIF_LIBYUV=OFF` and `-DAVIF_LIBSHARPYUV=SYSTEM`
   with `AOM_LIBRARY`/`AOM_INCLUDE_DIR`/`LIBSHARPYUV_LIBRARY`/
   `LIBSHARPYUV_INCLUDE_DIR` pointing at the trees we build. `AVIF_CODEC_AOM=1`
-  silently disables the codec on those versions.
+  silently disables the codec on those versions, and the decoder's
+  `-DAVIF_CODEC_DAV1D=1 -DAVIF_LOCAL_DAV1D=1` would need the same treatment.
 - **MozJPEG is built twice, in two SIMD configurations.** Its hand-written
   SIMD comes in an x86 flavour, which is NASM and cannot be assembled for
   wasm, and an Arm Neon flavour, which is plain C intrinsics and reaches wasm

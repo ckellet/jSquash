@@ -30,4 +30,9 @@ RUN rustup toolchain install nightly \
 ENV RUSTFLAGS="-C target-feature=+simd128"
 
 WORKDIR /src
-CMD ["sh", "-c", "rm -rf pkg && wasm-pack build --target web -- --verbose --locked && rm pkg/.gitignore"]
+# No --locked. Cargo still resolves from the committed Cargo.lock and only
+# rewrites entries a changed Cargo.toml forces, so builds stay reproducible in
+# the normal case; --locked additionally refused to build at all after a
+# version bump, which made every dependency update need a bespoke invocation.
+# The trade is that a stale lockfile is now updated rather than failing loudly.
+CMD ["sh", "-c", "rm -rf pkg && wasm-pack build --target web -- --verbose && rm pkg/.gitignore"]
