@@ -1,11 +1,15 @@
 extern crate cfg_if;
 extern crate resize;
+extern crate rgb;
 extern crate wasm_bindgen;
 
 mod utils;
 
 use resize::Pixel;
 use resize::Type;
+// `resize` 0.8 takes typed pixel slices rather than raw component slices;
+// `FromSlice` is what reinterprets a flat `[u8]`/`[f32]` as `[RGBA<_>]`.
+use rgb::FromSlice;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::Clamped;
 
@@ -77,10 +81,13 @@ pub fn resize(
             input_height,
             output_width,
             output_height,
-            Pixel::RGBA,
+            Pixel::RGBA8,
             typ,
-        );
-        resizer.resize(input_image.as_slice(), output_image.as_mut_slice());
+        )
+        .unwrap_throw();
+        resizer
+            .resize(input_image.as_rgba(), output_image.as_rgba_mut())
+            .unwrap_throw();
         return Clamped(output_image);
     }
 
@@ -110,11 +117,14 @@ pub fn resize(
         output_height,
         Pixel::RGBAF32,
         typ,
-    );
-    resizer.resize(
-        preprocessed_input_image.as_slice(),
-        unprocessed_output_image.as_mut_slice(),
-    );
+    )
+    .unwrap_throw();
+    resizer
+        .resize(
+            preprocessed_input_image.as_rgba(),
+            unprocessed_output_image.as_rgba_mut(),
+        )
+        .unwrap_throw();
 
     for i in 0..num_output_pixels {
         for j in 0..3 {

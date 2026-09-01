@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Updates the `resize` crate to 0.8.9, from 0.5.5. Output is byte-identical
+  across `triangle`, `catrom`, `mitchell` and `lanczos3`, and timings are
+  within noise, so this is a maintenance bump rather than an improvement -
+  0.5.5 was five years behind.
+- The crate's `rayon` feature is disabled. It became a default in 0.8 and is
+  dead weight in a single-threaded wasm build: the parallel path can never be
+  taken, but the code was still linked, which cost 62 KB of wasm (17.6 KB
+  brotli). With it off the module grows by 522 bytes raw, 58 brotli.
+
 ## @jsquash/resize@2.1.1
 
 ### Fixes
