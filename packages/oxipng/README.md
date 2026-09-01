@@ -81,8 +81,29 @@ two orders of magnitude in time for a fraction of a percent.
 
 So: measure on your own images before enabling it. It suits assets compressed
 once and served many times, and is a poor trade for anything compressed per
-request. Lower `zopfliIterations` on large images - the cost grows with the
-amount of data, and the returns diminish quickly.
+request - the times above are seconds per image, on a fast desktop CPU, and
+this is pure CPU work with nothing to overlap. In a CPU-metered environment
+such as Cloudflare Workers, treat it as a build-time tool rather than a
+request-time one.
+
+### Do not lower `zopfliIterations` blindly
+
+Fewer iterations is not simply "less of the same win". Below about 5, Zopfli
+loses to libdeflate outright on anything that is not highly compressible,
+because libdeflate is already searching hard and Zopfli has not yet found a
+better parse:
+
+| Iterations | Smooth gradients | Textured photo | Fine noise |
+| --- | --- | --- | --- |
+| 1 | −33.1% | **+2.5%** | **+2.1%** |
+| 3 | −33.3% | **+0.7%** | +0.1% |
+| 5 | −33.4% | −0.3% | −0.2% |
+| 15 (default) | −34.0% | −0.7% | −0.2% |
+
+Above 5 the curve is nearly flat - on gradients, 1 iteration already captures
+33 of the 34 points available, and 15 to 30 buys 0.1% for twice the time. So
+the useful range is narrow: 5 is about the lowest value that never loses, and
+past 15 there is nothing left to gain.
 
 ### What it costs everyone
 
