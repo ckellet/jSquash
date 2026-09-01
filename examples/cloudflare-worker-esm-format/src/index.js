@@ -1,6 +1,10 @@
 import decodeJpeg, { init as initJpegWasm } from '@jsquash/jpeg/decode';
 import decodePng, { init as initPngWasm } from '@jsquash/png/decode';
-import encodeWebp, { init as initWebpWasm } from '@jsquash/webp/encode';
+// `encode-simd` rather than `encode`: the latter picks a build at runtime,
+// and the binary supplied below has to match whichever glue that picks. A
+// single-variant entry point binds one build, so the pairing is explicit -
+// and a Workers bundle then carries one .wasm instead of every candidate.
+import encodeWebp, { init as initWebpWasm } from '@jsquash/webp/encode-simd';
 
 // @Note, We need to manually import the WASM binaries below so that we can use them in the worker
 // CF Workers do not support dynamic imports
