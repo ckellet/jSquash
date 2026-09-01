@@ -22,15 +22,6 @@ function takeObject(idx) {
     return ret;
 }
 
-function addHeapObject(obj) {
-    if (heap_next === heap.length) heap.push(heap.length + 1);
-    const idx = heap_next;
-    heap_next = heap[idx];
-
-    heap[idx] = obj;
-    return idx;
-}
-
 const cachedTextDecoder = (typeof TextDecoder !== 'undefined' ? new TextDecoder('utf-8', { ignoreBOM: true, fatal: true }) : { decode: () => { throw Error('TextDecoder not available') } } );
 
 if (typeof TextDecoder !== 'undefined') { cachedTextDecoder.decode(); };
@@ -47,6 +38,15 @@ function getUint8Memory0() {
 function getStringFromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return cachedTextDecoder.decode(getUint8Memory0().subarray(ptr, ptr + len));
+}
+
+function addHeapObject(obj) {
+    if (heap_next === heap.length) heap.push(heap.length + 1);
+    const idx = heap_next;
+    heap_next = heap[idx];
+
+    heap[idx] = obj;
+    return idx;
 }
 
 let WASM_VECTOR_LEN = 0;
@@ -76,14 +76,15 @@ function getArrayU8FromWasm0(ptr, len) {
 * @param {number} level
 * @param {boolean} interlace
 * @param {boolean} optimize_alpha
+* @param {number} zopfli_iterations
 * @returns {Uint8Array}
 */
-export function optimise(data, level, interlace, optimize_alpha) {
+export function optimise(data, level, interlace, optimize_alpha, zopfli_iterations) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.optimise(retptr, ptr0, len0, level, interlace, optimize_alpha);
+        wasm.optimise(retptr, ptr0, len0, level, interlace, optimize_alpha, zopfli_iterations);
         var r0 = getInt32Memory0()[retptr / 4 + 0];
         var r1 = getInt32Memory0()[retptr / 4 + 1];
         var v2 = getArrayU8FromWasm0(r0, r1).slice();
@@ -101,14 +102,15 @@ export function optimise(data, level, interlace, optimize_alpha) {
 * @param {number} level
 * @param {boolean} interlace
 * @param {boolean} optimize_alpha
+* @param {number} zopfli_iterations
 * @returns {Uint8Array}
 */
-export function optimise_raw(data, width, height, level, interlace, optimize_alpha) {
+export function optimise_raw(data, width, height, level, interlace, optimize_alpha, zopfli_iterations) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.optimise_raw(retptr, ptr0, len0, width, height, level, interlace, optimize_alpha);
+        wasm.optimise_raw(retptr, ptr0, len0, width, height, level, interlace, optimize_alpha, zopfli_iterations);
         var r0 = getInt32Memory0()[retptr / 4 + 0];
         var r1 = getInt32Memory0()[retptr / 4 + 1];
         var v2 = getArrayU8FromWasm0(r0, r1).slice();
@@ -254,6 +256,9 @@ function __wbg_get_imports() {
         const ret = getObject(arg0).call(getObject(arg1));
         return addHeapObject(ret);
     }, arguments) };
+    imports.wbg.__wbindgen_throw = function(arg0, arg1) {
+        throw new Error(getStringFromWasm0(arg0, arg1));
+    };
     imports.wbg.__wbindgen_object_clone_ref = function(arg0) {
         const ret = getObject(arg0);
         return addHeapObject(ret);
@@ -267,9 +272,6 @@ function __wbg_get_imports() {
         }
         const ret = result;
         return ret;
-    };
-    imports.wbg.__wbindgen_throw = function(arg0, arg1) {
-        throw new Error(getStringFromWasm0(arg0, arg1));
     };
     imports.wbg.__wbindgen_module = function() {
         const ret = __wbg_init.__wbindgen_wasm_module;

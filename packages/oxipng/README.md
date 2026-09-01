@@ -33,6 +33,8 @@ The Oxipng optimisation options for the output image. [See default values](./met
 - `interlace` (boolean) whether to use PNG interlacing or not. Interlacing will increase the size of an optimised image.
 - `level` (number) is the optimisation level between 1 to 6. The higher the level, the higher the compression. Any level above 4 is not recommended.
 - `optimiseAlpha` (boolean) whether to allow transparent pixels to be altered to improve compression.
+- `zopfli` (boolean) compress with Zopfli instead of libdeflate. Off by default. See [Zopfli compression](#zopfli-compression) below.
+- `zopfliIterations` (number) how many Zopfli iterations to run, 1-255. Ignored unless `zopfli` is set. Defaults to 15, matching oxipng's own `--zopfli`.
 
 #### Example
 ```js
@@ -45,6 +47,48 @@ const pngImageBuffer = await formData.get('image').arrayBuffer();
 
 const optimisedPngBuffer = await optimise(pngImageBuffer, { level: 3 });
 ```
+
+## Zopfli compression
+
+`zopfli: true` swaps oxipng's deflate implementation from libdeflate to Zopfli.
+The output is an ordinary PNG that every decoder already reads - only the
+compressed stream differs, and the pixels it decodes to are unchanged. Zopfli
+simply searches much harder for a short encoding.
+
+```js
+import { optimise } from '@jsquash/oxipng';
+
+// Same options otherwise; `level` still selects filters and reductions.
+const smaller = await optimise(pngImageBuffer, { level: 3, zopfli: true });
+```
+
+### What it is worth
+
+Almost entirely a function of how compressible the image already is. Measured
+at `level: 2` on 1024x768 images, decoded pixels identical in every case:
+
+| Content | Size | Time |
+| --- | --- | --- |
+| Smooth gradients | **−34.1%** | 96x |
+| Flat colour blocks, hard edges | −1.1% | 43x |
+| Photographic texture | −0.6% | 85x |
+| Fine noise | −0.2% | 10x |
+
+The pattern is that Zopfli pays off where the filtered data is already highly
+repetitive and there is a much shorter encoding to find. Where the data is
+close to incompressible, there is nothing left to win and you are paying one to
+two orders of magnitude in time for a fraction of a percent.
+
+So: measure on your own images before enabling it. It suits assets compressed
+once and served many times, and is a poor trade for anything compressed per
+request. Lower `zopfliIterations` on large images - the cost grows with the
+amount of data, and the returns diminish quickly.
+
+### What it costs everyone
+
+Zopfli is compiled into the wasm whether or not you enable it, which takes the
+single-threaded build from 77.0 KB to 104.1 KB brotli, and the threaded one
+from 102.6 KB to 129.5 KB.
 
 ## Activate Multithreading
 

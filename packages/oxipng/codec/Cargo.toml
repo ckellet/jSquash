@@ -12,7 +12,11 @@ wasm-opt = ["-O3", "--enable-simd", "--no-validation"]
 crate-type = ["cdylib"]
 
 [dependencies]
-oxipng = { version = "9.0", default-features = false, features = ["freestanding"] }
+# `zopfli` is in oxipng's default feature set, which `default-features = false`
+# turns off along with the CLI and rayon. It is the only way to reach
+# `Deflaters::Zopfli`, and it is opt-in at the API, so it costs callers who
+# do not ask for it nothing but binary size.
+oxipng = { version = "9.0", default-features = false, features = ["freestanding", "zopfli"] }
 wasm-bindgen = "0.2.92"
 log = { version = "0.4.11", features = ["release_max_level_off"] }
 wasm-bindgen-rayon = { version = "1.2.1", optional = true }

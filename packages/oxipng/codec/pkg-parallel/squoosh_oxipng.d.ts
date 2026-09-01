@@ -5,9 +5,10 @@
 * @param {number} level
 * @param {boolean} interlace
 * @param {boolean} optimize_alpha
+* @param {number} zopfli_iterations
 * @returns {Uint8Array}
 */
-export function optimise(data: Uint8Array, level: number, interlace: boolean, optimize_alpha: boolean): Uint8Array;
+export function optimise(data: Uint8Array, level: number, interlace: boolean, optimize_alpha: boolean, zopfli_iterations: number): Uint8Array;
 /**
 * @param {Uint8ClampedArray} data
 * @param {number} width
@@ -15,9 +16,10 @@ export function optimise(data: Uint8Array, level: number, interlace: boolean, op
 * @param {number} level
 * @param {boolean} interlace
 * @param {boolean} optimize_alpha
+* @param {number} zopfli_iterations
 * @returns {Uint8Array}
 */
-export function optimise_raw(data: Uint8ClampedArray, width: number, height: number, level: number, interlace: boolean, optimize_alpha: boolean): Uint8Array;
+export function optimise_raw(data: Uint8ClampedArray, width: number, height: number, level: number, interlace: boolean, optimize_alpha: boolean, zopfli_iterations: number): Uint8Array;
 /**
 * @param {number} num_threads
 * @returns {Promise<any>}
@@ -48,8 +50,8 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly optimise: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-  readonly optimise_raw: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
+  readonly optimise: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+  readonly optimise_raw: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => void;
   readonly __wbg_wbg_rayon_poolbuilder_free: (a: number) => void;
   readonly initThreadPool: (a: number) => number;
   readonly wbg_rayon_poolbuilder_build: (a: number) => void;

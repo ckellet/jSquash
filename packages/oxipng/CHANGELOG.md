@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `zopfli` and `zopfliIterations` options. Zopfli replaces libdeflate as the
+  deflate implementation. The output is an ordinary PNG that decodes to
+  identical pixels; only the compressed stream differs. Off by default;
+  oxipng's `zopfli` cargo feature had been disabled along with the rest of its
+  defaults, so this was previously unreachable.
+
+  How much it saves depends almost entirely on how compressible the image
+  already is - see the package README for measurements. It ranges from
+  negligible on noisy or textured content to very large on smooth content, and
+  always costs an order of magnitude or more in time.
+
+### Changed
+
+- The wasm is larger: 77.0 KB to 104.1 KB brotli on the single-threaded build,
+  102.6 KB to 129.5 KB on the threaded one. Zopfli is compiled in whether or
+  not a caller enables it.
+
 ## @jsquash/oxipng@2.3.0
 
 ### Adds
