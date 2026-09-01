@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: ['main']
+    # `main` tracks upstream unchanged, so on its own it never exercises this
+    # fork's work; `kedos` is where that lives.
+    branches: ['main', 'kedos']
   pull_request:
     types: [opened, synchronize]
 
