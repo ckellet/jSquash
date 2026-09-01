@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- `init()` now keeps the wasm it was given, so the call after a `dispose()`
+  re-instantiates from it instead of falling back to fetching the binary -
+  which a runtime like Cloudflare Workers cannot do. `dispose()` is also safe
+  to call with work outstanding: the reclaim waits for the calls already in
+  flight rather than pulling the heap out from under them.
+
 ### Changed
 
 - Updates oxipng to v10.2.0, from v9.1.1. Output is unchanged at `level: 2`

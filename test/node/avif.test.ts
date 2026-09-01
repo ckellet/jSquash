@@ -1,5 +1,5 @@
 import test from 'ava';
-import { importWasmModule, getFixturesImage, decoded } from './utils.js';
+import { importWasmModule, getFixturesImage } from './utils.js';
 
 import decode, {
   decodeWithMetadata,
@@ -15,6 +15,7 @@ import decodeSimd, {
 } from '@jsquash/avif/decode-simd.js';
 import decodeScalar, {
   init as initDecodeScalar,
+  dispose as disposeDecodeScalar,
 } from '@jsquash/avif/decode-scalar.js';
 import {
   init as initPngDecode,
@@ -70,10 +71,6 @@ test('can successfully decode image', async (t) => {
   ]);
   initDecode(decodeWasmModule);
   const data = await decode(testImage);
-  if (!data) {
-    t.fail('Failed to decode image');
-    return;
-  }
   t.is(data.width, 50);
   t.is(data.height, 50);
   t.is(data.data.length, 4 * 50 * 50);
@@ -85,7 +82,7 @@ test('can successfully decode 10-bit image', async (t) => {
     importWasmModule(AVIF_DEC_WASM),
   ]);
   initDecode(decodeWasmModule);
-  const data = decoded(await decode(testImage, { bitDepth: 10 }));
+  const data = await decode(testImage, { bitDepth: 10 });
   t.is(data.width, 128);
   t.is(data.height, 128);
   t.is(data.data.length, 4 * 128 * 128);
@@ -108,7 +105,7 @@ test('can successfully decode 12-bit image', async (t) => {
     importWasmModule(AVIF_DEC_WASM),
   ]);
   initDecode(decodeWasmModule);
-  const data = decoded(await decode(testImage, { bitDepth: 12 }));
+  const data = await decode(testImage, { bitDepth: 12 });
   t.is(data.width, 128);
   t.is(data.height, 128);
   t.is(data.data.length, 4 * 128 * 128);
@@ -131,7 +128,7 @@ test('can successfully decode 12-bit image to 10-bit precision', async (t) => {
     importWasmModule(AVIF_DEC_WASM),
   ]);
   initDecode(decodeWasmModule);
-  const data = decoded(await decode(testImage, { bitDepth: 10 }));
+  const data = await decode(testImage, { bitDepth: 10 });
   t.is(data.width, 128);
   t.is(data.height, 128);
   t.is(data.data.length, 4 * 128 * 128);
@@ -155,10 +152,6 @@ test('can successfully decode 12-bit image to 8-bit precision', async (t) => {
   ]);
   initDecode(decodeWasmModule);
   const data = await decode(testImage);
-  if (!data) {
-    t.fail('Failed to decode image');
-    return;
-  }
   t.is(data.width, 128);
   t.is(data.height, 128);
   t.is(data.data.length, 4 * 128 * 128);
@@ -179,10 +172,6 @@ test('can successfully decode 10-bit image to 8-bit precision', async (t) => {
   ]);
   initDecode(decodeWasmModule);
   const data = await decode(testImage);
-  if (!data) {
-    t.fail('Failed to decode image');
-    return;
-  }
   t.is(data.width, 128);
   t.is(data.height, 128);
   t.is(data.data.length, 4 * 128 * 128);
@@ -324,10 +313,6 @@ test('can successfully encode and decode lossless image', async (t) => {
   t.assert(encodedData instanceof ArrayBuffer);
 
   const decodedData = await decode(encodedData);
-  if (!decodedData) {
-    t.fail('Failed to decode image');
-    return;
-  }
 
   t.is(decodedData.width, originalImageData.width);
   t.is(decodedData.height, originalImageData.height);
@@ -364,10 +349,6 @@ test('encodes lossless even with conflicting quality option', async (t) => {
   t.assert(encodedData instanceof ArrayBuffer);
 
   const decodedData = await decode(encodedData);
-  if (!decodedData) {
-    t.fail('Failed to decode image');
-    return;
-  }
 
   t.deepEqual(
     decodedData.data,
@@ -406,10 +387,6 @@ test('encodes lossless (YUV444) even with conflicting subsample option', async (
   t.assert(encodedData instanceof ArrayBuffer);
 
   const decodedData = await decode(encodedData);
-  if (!decodedData) {
-    t.fail('Failed to decode image');
-    return;
-  }
 
   t.deepEqual(
     decodedData.data,
@@ -445,7 +422,7 @@ test('encode-simd.js encodes and round-trips through the decoder', async (t) => 
   const encodedData = await encodeSimd(originalImageData, { lossless: true });
   t.assert(encodedData instanceof ArrayBuffer);
 
-  const decodedData = decoded(await decode(encodedData));
+  const decodedData = await decode(encodedData);
   t.is(decodedData.width, originalImageData.width);
   t.is(decodedData.height, originalImageData.height);
   t.deepEqual(
@@ -484,8 +461,8 @@ test('decode-simd.js and decode-scalar.js both round-trip losslessly', async (t)
 
   const encodedData = await encode(originalImageData, { lossless: true });
 
-  const viaSimd = decoded(await decodeSimd(encodedData));
-  const viaScalar = decoded(await decodeScalar(encodedData));
+  const viaSimd = await decodeSimd(encodedData);
+  const viaScalar = await decodeScalar(encodedData);
 
   t.deepEqual(
     viaSimd.data,
@@ -656,4 +633,98 @@ test('encode accepts a profile supplied as a plain ArrayBuffer', async (t) => {
 
   const encoded = await encode(solidImage(), { icc: icc.slice().buffer });
   t.is((await readIccProfile(encoded))?.byteLength, icc.byteLength);
+});
+
+/**
+ * The lifecycle tests run serially, and on `decode-scalar.js` rather than
+ * `decode.js`, because they turn a shared cached module over. AVA runs serial
+ * tests before the concurrent ones, so nothing else is holding that entry
+ * point while they do.
+ */
+
+// A locateFile that resolves to nothing: reaching it at all means the module
+// handed to init() was not kept, and the re-instantiation fell back to
+// fetching the binary - which is what a Cloudflare Worker cannot do.
+const NEVER_FETCH = {
+  locateFile: () => '/jsquash-should-never-fetch-this.wasm',
+};
+
+test.serial(
+  'decode survives dispose() without being re-initialised',
+  async (t) => {
+    const [testImage, wasm] = await Promise.all([
+      getFixturesImage('test.avif'),
+      importWasmModule(AVIF_DEC_SCALAR_WASM),
+    ]);
+
+    await initDecodeScalar(wasm, NEVER_FETCH);
+    const before = await decodeScalar(testImage);
+
+    disposeDecodeScalar();
+
+    // No second init(): the module and options from the first one are what the
+    // decoder has to come back on.
+    const after = await decodeScalar(testImage);
+    t.deepEqual(after.data, before.data, 'decodes again after dispose()');
+  },
+);
+
+test.serial(
+  'dispose() during a decode leaves that decode intact',
+  async (t) => {
+    const [testImage, wasm] = await Promise.all([
+      getFixturesImage('test.avif'),
+      importWasmModule(AVIF_DEC_SCALAR_WASM),
+    ]);
+
+    // Instantiating by hand is what makes instantiations countable - it is
+    // what init() does with a module anyway - and one is all this should need.
+    let instantiations = 0;
+    await initDecodeScalar(wasm, {
+      instantiateWasm: (imports, callback) => {
+        instantiations++;
+        const instance = new WebAssembly.Instance(wasm, imports);
+        (callback as unknown as (i: WebAssembly.Instance) => void)(instance);
+        return instance.exports;
+      },
+    });
+    const reference = await decodeScalar(testImage);
+
+    // Reclaiming while this one is still running must not take the heap out
+    // from under it, and the call that follows must land on the same module
+    // rather than building a second one alongside it.
+    const inFlight = decodeScalar(testImage);
+    disposeDecodeScalar();
+    const next = decodeScalar(testImage);
+
+    t.deepEqual((await inFlight).data, reference.data, 'the in-flight decode');
+    t.deepEqual((await next).data, reference.data, 'the one after dispose()');
+    t.is(instantiations, 1, 'no module was built alongside the one in use');
+  },
+);
+
+test.serial('dispose() is safe to call spuriously', async (t) => {
+  const wasm = await importWasmModule(AVIF_DEC_SCALAR_WASM);
+
+  // Before anything has been instantiated, and twice over afterwards.
+  t.notThrows(() => disposeDecodeScalar());
+
+  await initDecodeScalar(wasm, NEVER_FETCH);
+  disposeDecodeScalar();
+  t.notThrows(() => disposeDecodeScalar());
+
+  const testImage = await getFixturesImage('test.avif');
+  t.is((await decodeScalar(testImage)).width, 50);
+});
+
+// Every other codec in the library reports a failed decode by throwing. AVIF
+// used to be typed as though it could also resolve to null, which left callers
+// writing two failure paths for one operation.
+test('decode throws on input it cannot decode', async (t) => {
+  const wasm = await importWasmModule(AVIF_DEC_SCALAR_WASM);
+  await initDecodeScalar(wasm);
+
+  const notAnImage = new Uint8Array(64).fill(7).buffer;
+  const error = await t.throwsAsync(() => decodeScalar(notAnImage));
+  t.is(error?.message, 'Decoding error');
 });

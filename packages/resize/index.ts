@@ -23,51 +23,115 @@ const MAGIC_KERNEL_METHODS = [
   'magicKernelSharp2021',
 ];
 
-let resizeWasmReady: Promise<unknown> | undefined;
-let hqxWasmReady: Promise<unknown> | undefined;
-let magicKernelWasmReady: Promise<unknown> | undefined;
+/**
+ * One module's slot: the instance, the wasm it was built from, and the
+ * teardown that gives it back.
+ *
+ * The input is kept rather than only used, because re-instantiating after a
+ * `dispose()` needs a binary and a runtime that cannot fetch its own -
+ * Cloudflare Workers being the one this matters for - has no other way to
+ * come by one. It has to be usable more than once: a compiled
+ * `WebAssembly.Module` or the bytes, not a `Response`.
+ */
+function createSlot<I>(
+  initWasm: (moduleOrPath?: I) => Promise<unknown>,
+  disposeWasm: () => void,
+) {
+  let ready: Promise<unknown> | undefined;
+  let retained: I | undefined;
+  let retiring = false;
+  /** A reclaim that has started but not finished. */
+  let teardown: Promise<void> | undefined;
+
+  return {
+    init(moduleOrPath?: I): Promise<unknown> {
+      if (moduleOrPath !== undefined) retained = moduleOrPath;
+
+      if (!ready) {
+        // Sequenced behind a reclaim that is still running: the generated glue
+        // keeps one slot for the module, so an instantiation overlapping a
+        // teardown would have its instance torn out from under it.
+        const reclaiming = teardown;
+        ready = reclaiming
+          ? reclaiming.then(() => initWasm(retained))
+          : initWasm(retained);
+      }
+
+      return ready;
+    },
+
+    /** Mark for teardown; the reclaim itself waits for the resizes to end. */
+    retire(): void {
+      if (ready) retiring = true;
+    },
+
+    reclaim(): void {
+      if (!retiring) return;
+
+      const pending = ready;
+      retiring = false;
+      ready = undefined;
+      if (!pending) return;
+
+      // Chained rather than fired straight away: an init() still in flight
+      // would otherwise install its instance after the teardown had run. The
+      // promise is kept so the next init() can sequence itself behind it.
+      const done = pending.then(
+        () => {
+          disposeWasm();
+        },
+        () => {
+          // Never instantiated, so there is nothing to tear down.
+        },
+      );
+
+      teardown = done;
+      void done.then(() => {
+        if (teardown === done) teardown = undefined;
+      });
+    },
+  };
+}
+
+const slots = {
+  resize: createSlot<InitResizeInput>(initResizeWasm, disposeResizeWasm),
+  hqx: createSlot<InitHqxInput>(initHqxWasm, disposeHqxWasm),
+  magicKernel: createSlot<InitMagicKernelInput>(
+    initMagicKernelWasm,
+    disposeMagicKernelWasm,
+  ),
+};
+
+/** Resizes in flight. A dispose() waits for these before reclaiming. */
+let inFlight = 0;
+
+function reclaim(): void {
+  for (const slot of Object.values(slots)) slot.reclaim();
+}
 
 export function initResize(moduleOrPath?: InitResizeInput) {
-  if (!resizeWasmReady) {
-    resizeWasmReady = initResizeWasm(moduleOrPath);
-  }
-  return resizeWasmReady;
+  return slots.resize.init(moduleOrPath);
 }
 
 export function initHqx(moduleOrPath?: InitHqxInput) {
-  if (!hqxWasmReady) {
-    hqxWasmReady = initHqxWasm(moduleOrPath);
-  }
-  return hqxWasmReady;
+  return slots.hqx.init(moduleOrPath);
 }
 
 export function initMagicKernel(moduleOrPath?: InitMagicKernelInput) {
-  if (!magicKernelWasmReady) {
-    magicKernelWasmReady = initMagicKernelWasm(moduleOrPath);
-  }
-  return magicKernelWasmReady;
+  return slots.magicKernel.init(moduleOrPath);
 }
 
 /**
  * Release every instantiated module so its WebAssembly.Memory can be garbage
  * collected. Subsequent resizes re-instantiate on demand.
  *
- * Only call this once outstanding resizes have settled - any ImageData still
- * referencing the old heap is detached.
+ * Safe to call with resizes outstanding: the reclaim waits for the last of
+ * them to finish. Any ImageData handed back before it runs is a copy, and
+ * stays valid.
  */
 export function dispose(): void {
-  if (resizeWasmReady) {
-    resizeWasmReady = undefined;
-    disposeResizeWasm();
-  }
-  if (hqxWasmReady) {
-    hqxWasmReady = undefined;
-    disposeHqxWasm();
-  }
-  if (magicKernelWasmReady) {
-    magicKernelWasmReady = undefined;
-    disposeMagicKernelWasm();
-  }
+  for (const slot of Object.values(slots)) slot.retire();
+  if (inFlight === 0) reclaim();
 }
 
 interface HqxResizeOptions extends WorkerResizeOptions {
@@ -209,58 +273,70 @@ export default async function resize(
   };
   let input = data;
 
-  // Magic kernel resizes never touch the resize module, so only warm it up
-  // when this call will actually reach it. An hqx resize still does, because
-  // it falls through to catrom to make up the remaining difference.
-  const resizeReady = optsIsMagicKernelOpts(options) ? undefined : initResize();
+  inFlight++;
+  try {
+    // Magic kernel resizes never touch the resize module, so only warm it up
+    // when this call will actually reach it. An hqx resize still does, because
+    // it falls through to catrom to make up the remaining difference.
+    const resizeReady = optsIsMagicKernelOpts(options)
+      ? undefined
+      : initResize();
 
-  if (optsIsHqxOpts(options)) {
-    input = await hqx(input, options);
-    // Regular resize to make up the difference
-    options = { ...options, method: 'catrom' };
-  }
+    if (optsIsHqxOpts(options)) {
+      input = await hqx(input, options);
+      // Regular resize to make up the difference
+      options = { ...options, method: 'catrom' };
+    }
 
-  if (options.fitMethod === 'contain') {
-    // Offsets must come from the image we are about to crop, which is not
-    // necessarily the caller's — hqx has already upscaled it by this point.
-    const { sx, sy, sw, sh } = getContainOffsets(
+    if (options.fitMethod === 'contain') {
+      // Offsets must come from the image we are about to crop, which is not
+      // necessarily the caller's — hqx has already upscaled it by this point.
+      const { sx, sy, sw, sh } = getContainOffsets(
+        input.width,
+        input.height,
+        options.width,
+        options.height,
+      );
+      const cropX = clamp(Math.round(sx), { min: 0, max: input.width });
+      const cropY = clamp(Math.round(sy), { min: 0, max: input.height });
+
+      input = crop(
+        input,
+        cropX,
+        cropY,
+        Math.min(Math.round(sw), input.width - cropX),
+        Math.min(Math.round(sh), input.height - cropY),
+      );
+    }
+
+    if (optsIsMagicKernelOpts(options)) {
+      return magicKernel(input, options);
+    }
+
+    await resizeReady;
+
+    const result = wasmResize(
+      asUint8(input.data),
       input.width,
       input.height,
       options.width,
       options.height,
+      resizeMethods.indexOf(options.method),
+      options.premultiply,
+      options.linearRGB,
     );
-    const cropX = clamp(Math.round(sx), { min: 0, max: input.width });
-    const cropY = clamp(Math.round(sy), { min: 0, max: input.height });
 
-    input = crop(
-      input,
-      cropX,
-      cropY,
-      Math.min(Math.round(sw), input.width - cropX),
-      Math.min(Math.round(sh), input.height - cropY),
+    return new ImageData(
+      new Uint8ClampedArray(
+        result.buffer,
+        result.byteOffset,
+        result.byteLength,
+      ),
+      options.width,
+      options.height,
     );
+  } finally {
+    inFlight--;
+    if (inFlight === 0) reclaim();
   }
-
-  if (optsIsMagicKernelOpts(options)) {
-    return magicKernel(input, options);
-  }
-
-  await resizeReady;
-
-  const result = wasmResize(
-    asUint8(input.data),
-    input.width,
-    input.height,
-    options.width,
-    options.height,
-    resizeMethods.indexOf(options.method),
-    options.premultiply,
-    options.linearRGB,
-  );
-
-  return new ImageData(
-    new Uint8ClampedArray(result.buffer, result.byteOffset, result.byteLength),
-    options.width,
-    options.height,
-  );
 }

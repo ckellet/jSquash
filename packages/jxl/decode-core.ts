@@ -5,48 +5,32 @@
 import type { JXLModule } from './codec/dec/jxl_dec.js';
 import type { DecodedImage, ImageMetadata } from './meta.js';
 
-import { disposeEmscriptenModule, initEmscriptenModule } from './utils.js';
+import { createModuleCache } from './utils.js';
 
 export type CodecLoader = () => Promise<
   EmscriptenWasm.ModuleFactory<JXLModule>
 >;
 
 export function createDecoder(loadCodec: CodecLoader) {
-  let emscriptenModule: Promise<JXLModule> | undefined;
+  const codecModule = createModuleCache<JXLModule>(loadCodec);
 
-  function init(
-    module?: WebAssembly.Module | Partial<EmscriptenWasm.ModuleOpts>,
-    moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
-  ): Promise<JXLModule> {
-    let actualModule =
-      module instanceof WebAssembly.Module ? module : undefined;
-    let actualOptions = moduleOptionOverrides;
-
-    if (arguments.length === 1 && !(module instanceof WebAssembly.Module)) {
-      actualOptions = module as Partial<EmscriptenWasm.ModuleOpts>;
-    }
-
-    // Assigned synchronously; see the note in encode-core.ts.
-    emscriptenModule = (async () =>
-      initEmscriptenModule(await loadCodec(), actualModule, actualOptions))();
-
-    return emscriptenModule;
-  }
+  /**
+   * Instantiate the module up front, optionally from wasm you supply.
+   *
+   * The module and options are remembered, so a `dispose()` and the
+   * re-instantiation that follows it stay on the same binary.
+   */
+  const init = codecModule.init;
 
   /** See the note on the encoder's dispose(). */
-  function dispose(): void {
-    const pending = emscriptenModule;
-    emscriptenModule = undefined;
-    disposeEmscriptenModule(pending);
-  }
+  const dispose = codecModule.dispose;
 
-  async function decode(buffer: ArrayBuffer): Promise<ImageData> {
-    if (!emscriptenModule) emscriptenModule = init();
-
-    const module = await emscriptenModule;
-    const result = module.decode(buffer);
-    if (!result) throw new Error('Decoding error');
-    return result;
+  function decode(buffer: ArrayBuffer): Promise<ImageData> {
+    return codecModule.use((codec) => {
+      const result = codec.decode(buffer);
+      if (!result) throw new Error('Decoding error');
+      return result;
+    });
   }
 
   /**
@@ -63,19 +47,18 @@ export function createDecoder(loadCodec: CodecLoader) {
    * would be worse than tagging them with nothing. Use `readIccProfile` to
    * find out what space the file itself declares.
    */
-  async function decodeWithMetadata(
+  function decodeWithMetadata(
     buffer: ArrayBuffer,
   ): Promise<DecodedImage<ImageData>> {
-    if (!emscriptenModule) emscriptenModule = init();
+    return codecModule.use((codec) => {
+      const result = codec.decode_with_metadata(buffer);
+      if (!result) throw new Error('Decoding error');
 
-    const module = await emscriptenModule;
-    const result = module.decode_with_metadata(buffer);
-    if (!result) throw new Error('Decoding error');
+      const metadata: ImageMetadata = {};
+      if (result.icc && result.icc.length > 0) metadata.icc = result.icc;
 
-    const metadata: ImageMetadata = {};
-    if (result.icc && result.icc.length > 0) metadata.icc = result.icc;
-
-    return { image: result.image, metadata };
+      return { image: result.image, metadata };
+    });
   }
 
   /**
@@ -91,14 +74,13 @@ export function createDecoder(loadCodec: CodecLoader) {
    * there but unreadable: metadata is advisory and never fails an image whose
    * pixels are perfectly good.
    */
-  async function readIccProfile(
+  function readIccProfile(
     buffer: ArrayBuffer,
   ): Promise<Uint8Array | undefined> {
-    if (!emscriptenModule) emscriptenModule = init();
-
-    const module = await emscriptenModule;
-    const icc = module.read_icc_profile(buffer);
-    return icc && icc.length > 0 ? icc : undefined;
+    return codecModule.use((codec) => {
+      const icc = codec.read_icc_profile(buffer);
+      return icc && icc.length > 0 ? icc : undefined;
+    });
   }
 
   return { init, dispose, decode, decodeWithMetadata, readIccProfile };

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `init()` now keeps the wasm module and options it was given, so the call after
+  a `dispose()` re-instantiates from them instead of falling back to fetching
+  the binary - which a runtime like Cloudflare Workers cannot do. `dispose()`
+  is also safe to call with work outstanding: calls already in flight keep the
+  module they are running on, and the reclaim waits for the last of them.
+
 ## @jsquash/qoi@1.1.0
 
 ### Adds

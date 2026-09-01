@@ -21,39 +21,32 @@ import type { MozJPEGModule } from './codec/enc/mozjpeg_enc.js';
 
 import mozjpeg_enc from './codec/enc/mozjpeg_enc.js';
 import { defaultOptions, toIccProfileBytes } from './meta.js';
-import {
-  disposeEmscriptenModule,
-  initEmscriptenModule,
-  withPixelBuffer,
-} from './utils.js';
+import { createModuleCache, withPixelBuffer } from './utils.js';
 
 export type { IccProfileInput, JpegEncodeOptions };
 
-let emscriptenModule: Promise<MozJPEGModule> | undefined;
+const codecModule = createModuleCache<MozJPEGModule>(() => mozjpeg_enc);
 
-export async function init(
+/**
+ * Instantiate the module up front, optionally from wasm you supply.
+ *
+ * Both the module and the option overrides are remembered, so the
+ * re-instantiation after a `dispose()` uses them again rather than falling
+ * back to fetching the binary - which is not something every runtime this
+ * library targets can do.
+ */
+export function init(
   moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
 ): Promise<MozJPEGModule>;
-export async function init(
+export function init(
   module?: WebAssembly.Module,
   moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
+): Promise<MozJPEGModule>;
+export function init(
+  module?: WebAssembly.Module | Partial<EmscriptenWasm.ModuleOpts>,
+  moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
 ): Promise<MozJPEGModule> {
-  let actualModule: WebAssembly.Module | undefined = module;
-  let actualOptions: Partial<EmscriptenWasm.ModuleOpts> | undefined =
-    moduleOptionOverrides;
-
-  // If only one argument is provided and it's not a WebAssembly.Module
-  if (arguments.length === 1 && !(module instanceof WebAssembly.Module)) {
-    actualModule = undefined;
-    actualOptions = module as unknown as Partial<EmscriptenWasm.ModuleOpts>;
-  }
-
-  emscriptenModule = initEmscriptenModule(
-    mozjpeg_enc,
-    actualModule,
-    actualOptions,
-  );
-  return emscriptenModule;
+  return codecModule.init(module, moduleOptionOverrides);
 }
 
 /**
@@ -62,12 +55,11 @@ export async function init(
  * Emscripten heaps grow but never shrink, so a long-lived worker that has
  * encoded a single large image holds that peak allocation for the rest of
  * its life. The next call re-instantiates the module on demand.
+ *
+ * Safe to call with work outstanding: each call keeps the module it is
+ * running on, and the reclaim happens once the last of them has finished.
  */
-export function dispose(): void {
-  const pending = emscriptenModule;
-  emscriptenModule = undefined;
-  disposeEmscriptenModule(pending);
-}
+export const dispose = codecModule.dispose;
 
 export default async function encode(
   data: ImageData,
@@ -80,28 +72,27 @@ export default async function encode(
   const { icc: iccInput, ...encodeOptions } = options;
   const icc = iccInput === undefined ? undefined : toIccProfileBytes(iccInput);
 
-  if (!emscriptenModule) emscriptenModule = init();
+  return codecModule.use((codec) => {
+    const _options = { ...defaultOptions, ...encodeOptions };
 
-  const module = await emscriptenModule;
-  const _options = { ...defaultOptions, ...encodeOptions };
-
-  const resultView = withPixelBuffer(module, data.data, (pointer) =>
-    icc === undefined
-      ? module.encode(pointer, data.width, data.height, _options)
-      : withPixelBuffer(module, icc, (iccPointer) =>
-          module.encode_with_icc_profile(
-            pointer,
-            data.width,
-            data.height,
-            _options,
-            iccPointer,
-            icc.byteLength,
+    const resultView = withPixelBuffer(codec, data.data, (pointer) =>
+      icc === undefined
+        ? codec.encode(pointer, data.width, data.height, _options)
+        : withPixelBuffer(codec, icc, (iccPointer) =>
+            codec.encode_with_icc_profile(
+              pointer,
+              data.width,
+              data.height,
+              _options,
+              iccPointer,
+              icc.byteLength,
+            ),
           ),
-        ),
-  );
+    );
 
-  if (!resultView) throw new Error('Encoding error.');
+    if (!resultView) throw new Error('Encoding error.');
 
-  // wasm can't run on SharedArrayBuffers, so we hard-cast to ArrayBuffer.
-  return resultView.buffer as ArrayBuffer;
+    // wasm can't run on SharedArrayBuffers, so we hard-cast to ArrayBuffer.
+    return resultView.buffer as ArrayBuffer;
+  });
 }

@@ -5,6 +5,7 @@ import decode, {
   decodeWithMetadata,
   readIccProfile,
   init as initDecode,
+  dispose as disposeDecode,
 } from '@jsquash/jpeg/decode.js';
 import encode, { init as initEncode } from '@jsquash/jpeg/encode.js';
 
@@ -282,3 +283,26 @@ test('decodeWithMetadata surfaces raw EXIF and still decodes pixels', async (t) 
   t.assert(byteOrder === 'II' || byteOrder === 'MM', 'expected a TIFF header');
   t.is(metadata.icc, undefined);
 });
+
+test.serial(
+  'decode survives dispose() without being re-initialised',
+  async (t) => {
+    const [testImage, wasm] = await Promise.all([
+      getFixturesImage('test.jpeg'),
+      importWasmModule(DEC_WASM),
+    ]);
+
+    // A locateFile that resolves to nothing: reaching it at all means the
+    // module handed to init() was not kept, and the re-instantiation fell back
+    // to fetching the binary - which is what a Cloudflare Worker cannot do.
+    await initDecode(wasm, {
+      locateFile: () => '/jsquash-should-never-fetch-this.wasm',
+    });
+    const before = await decode(testImage);
+
+    disposeDecode();
+
+    const after = await decode(testImage);
+    t.deepEqual(after.data, before.data, 'decodes again after dispose()');
+  },
+);

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Fixed
+
+- `init()` now keeps the wasm module and options it was given, so the call after
+  a `dispose()` re-instantiates from them instead of falling back to fetching
+  the binary - which a runtime like Cloudflare Workers cannot do. `dispose()`
+  is also safe to call with work outstanding: calls already in flight keep the
+  module they are running on, and the reclaim waits for the last of them.
+- `decode` no longer resolves to `null`. It was typed as `ImageData | null`
+  while also throwing `Decoding error` on a failed decode, so callers had two
+  failure paths to handle for one operation. It now throws on anything it
+  cannot decode, matching every other codec in the library. Code that checked
+  the result for `null` still compiles; the check is simply dead.
+
 ### Added
 
 - ICC colour profile passthrough. Previously the profile was discarded on decode

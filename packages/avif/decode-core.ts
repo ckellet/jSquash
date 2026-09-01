@@ -5,7 +5,7 @@
 import type { AVIFModule } from './codec/dec/avif_dec.js';
 import type { DecodedImage, ImageData16bit, ImageMetadata } from './meta.js';
 
-import { disposeEmscriptenModule, initEmscriptenModule } from './utils.js';
+import { createModuleCache } from './utils.js';
 
 export type CodecLoader = () => Promise<
   EmscriptenWasm.ModuleFactory<AVIFModule>
@@ -16,54 +16,45 @@ type DecodeOptions = {
 };
 
 export function createDecoder(loadCodec: CodecLoader) {
-  let emscriptenModule: Promise<AVIFModule> | undefined;
+  const codecModule = createModuleCache<AVIFModule>(loadCodec);
 
-  function init(
-    module?: WebAssembly.Module | Partial<EmscriptenWasm.ModuleOpts>,
-    moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
-  ): Promise<AVIFModule> {
-    let actualModule =
-      module instanceof WebAssembly.Module ? module : undefined;
-    let actualOptions = moduleOptionOverrides;
-
-    if (arguments.length === 1 && !(module instanceof WebAssembly.Module)) {
-      actualOptions = module as Partial<EmscriptenWasm.ModuleOpts>;
-    }
-
-    // Assigned synchronously; see the note in encode-core.ts.
-    emscriptenModule = (async () =>
-      initEmscriptenModule(await loadCodec(), actualModule, actualOptions))();
-
-    return emscriptenModule;
-  }
+  /**
+   * Instantiate the module up front, optionally from wasm you supply.
+   *
+   * The module and options are remembered, so a `dispose()` and the
+   * re-instantiation that follows it stay on the same binary.
+   */
+  const init = codecModule.init;
 
   /** See the note on the encoder's dispose(). */
-  function dispose(): void {
-    const pending = emscriptenModule;
-    emscriptenModule = undefined;
-    disposeEmscriptenModule(pending);
-  }
+  const dispose = codecModule.dispose;
 
-  function decode(buffer: ArrayBuffer): Promise<ImageData | null>;
+  /**
+   * Decode an image.
+   *
+   * Throws on anything it cannot decode, as every other codec in the library
+   * does; it never resolves to a missing image.
+   */
+  function decode(buffer: ArrayBuffer): Promise<ImageData>;
   function decode(
     buffer: ArrayBuffer,
     options: { bitDepth?: 8 },
-  ): Promise<ImageData | null>;
+  ): Promise<ImageData>;
   function decode(
     buffer: ArrayBuffer,
     options: { bitDepth: 10 | 12 | 16 },
-  ): Promise<ImageData16bit | null>;
-  async function decode(
+  ): Promise<ImageData16bit>;
+  function decode(
     buffer: ArrayBuffer,
     options?: DecodeOptions,
-  ): Promise<ImageData | ImageData16bit | null> {
-    if (!emscriptenModule) emscriptenModule = init();
-
-    const module = await emscriptenModule;
+  ): Promise<ImageData | ImageData16bit> {
     const bitDepth = options?.bitDepth ?? 8;
-    const result = module.decode(buffer, bitDepth);
-    if (!result) throw new Error('Decoding error');
-    return result;
+
+    return codecModule.use((codec) => {
+      const result = codec.decode(buffer, bitDepth);
+      if (!result) throw new Error('Decoding error');
+      return result;
+    });
   }
 
   /**
@@ -94,28 +85,27 @@ export function createDecoder(loadCodec: CodecLoader) {
     buffer: ArrayBuffer,
     options: { bitDepth: 10 | 12 | 16 },
   ): Promise<DecodedImage<ImageData16bit>>;
-  async function decodeWithMetadata(
+  function decodeWithMetadata(
     buffer: ArrayBuffer,
     options?: DecodeOptions,
   ): Promise<DecodedImage<ImageData | ImageData16bit>> {
-    if (!emscriptenModule) emscriptenModule = init();
-
-    const module = await emscriptenModule;
     const bitDepth = options?.bitDepth ?? 8;
 
-    const image = module.decode(buffer, bitDepth);
-    if (!image) throw new Error('Decoding error');
+    return codecModule.use((codec) => {
+      const image = codec.decode(buffer, bitDepth);
+      if (!image) throw new Error('Decoding error');
 
-    // A second pass over the same input, which parses the container's boxes
-    // rather than decoding anything. That costs one more copy of the
-    // *compressed* bytes across the wasm boundary and buys a pixel path that
-    // is untouched for callers who never ask for metadata.
-    const icc = module.read_icc_profile(buffer);
+      // A second pass over the same input, which parses the container's boxes
+      // rather than decoding anything. That costs one more copy of the
+      // *compressed* bytes across the wasm boundary and buys a pixel path that
+      // is untouched for callers who never ask for metadata.
+      const icc = codec.read_icc_profile(buffer);
 
-    const metadata: ImageMetadata = {};
-    if (icc && icc.length > 0) metadata.icc = icc;
+      const metadata: ImageMetadata = {};
+      if (icc && icc.length > 0) metadata.icc = icc;
 
-    return { image, metadata };
+      return { image, metadata };
+    });
   }
 
   /**
@@ -125,14 +115,13 @@ export function createDecoder(loadCodec: CodecLoader) {
    * is there but unreadable - metadata is advisory, and a file whose pixels
    * decode perfectly well should not fail over it.
    */
-  async function readIccProfile(
+  function readIccProfile(
     buffer: ArrayBuffer,
   ): Promise<Uint8Array | undefined> {
-    if (!emscriptenModule) emscriptenModule = init();
-
-    const module = await emscriptenModule;
-    const icc = module.read_icc_profile(buffer);
-    return icc && icc.length > 0 ? icc : undefined;
+    return codecModule.use((codec) => {
+      const icc = codec.read_icc_profile(buffer);
+      return icc && icc.length > 0 ? icc : undefined;
+    });
   }
 
   return { init, dispose, decode, decodeWithMetadata, readIccProfile };

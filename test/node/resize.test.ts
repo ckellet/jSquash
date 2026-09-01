@@ -1,7 +1,12 @@
 import test from 'ava';
 import { importWasmModule } from './utils.js';
 
-import resize, { initHqx, initMagicKernel, initResize } from '@jsquash/resize';
+import resize, {
+  dispose,
+  initHqx,
+  initMagicKernel,
+  initResize,
+} from '@jsquash/resize';
 
 test('can successfully downsize an image', async (t) => {
   const testImage = {
@@ -180,3 +185,29 @@ test('magic kernel does not darken a flat image', async (t) => {
     t.is(resized.data[i], 200, `channel at ${i} should be unchanged`);
   }
 });
+
+test.serial(
+  'resize survives dispose() without being re-initialised',
+  async (t) => {
+    const testImage = {
+      data: new Uint8ClampedArray(4 * 100 * 100),
+      width: 100,
+      height: 100,
+      colorSpace: 'srgb' as const,
+    };
+    const wasm = await importWasmModule(
+      'node_modules/@jsquash/resize/lib/resize/pkg/squoosh_resize_bg.wasm',
+    );
+
+    await initResize(wasm);
+    const before = await resize(testImage, { width: 50, height: 50 });
+
+    // Nothing re-initialises after this. Without the module kept from the
+    // init() above, the glue falls back to fetching its own binary, which
+    // fails here and in a Cloudflare Worker alike.
+    dispose();
+
+    const after = await resize(testImage, { width: 50, height: 50 });
+    t.deepEqual(after.data, before.data, 'resizes again after dispose()');
+  },
+);

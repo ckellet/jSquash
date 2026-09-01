@@ -54,11 +54,28 @@ async function initST(moduleOrPath?: InitInput) {
   return { optimise, optimise_raw, disposeWasm };
 }
 
-let wasmReady: ReturnType<typeof initMT | typeof initST> | undefined;
+type WasmExports = ReturnType<typeof initMT | typeof initST>;
 
-export async function init(
-  moduleOrPath?: InitInput,
-): Promise<ReturnType<typeof initMT | typeof initST>> {
+let wasmReady: WasmExports | undefined;
+let inFlight = 0;
+let retiring = false;
+
+/** A reclaim that has started but not finished. See `init`. */
+let teardown: Promise<void> | undefined;
+
+/**
+ * The wasm the caller supplied, kept for the next instantiation.
+ *
+ * Re-instantiating after a `dispose()` needs a binary, and a runtime that
+ * cannot fetch its own - Cloudflare Workers being the one this matters for -
+ * has no other way to come by one. It has to be something usable more than
+ * once: a compiled `WebAssembly.Module` or the bytes, not a `Response`.
+ */
+let retainedInput: InitInput | undefined;
+
+export async function init(moduleOrPath?: InitInput): Promise<WasmExports> {
+  if (moduleOrPath !== undefined) retainedInput = moduleOrPath;
+
   if (!wasmReady) {
     const hasHardwareConcurrency =
       globalThis.navigator?.hardwareConcurrency > 1;
@@ -67,35 +84,63 @@ export async function init(
       typeof WorkerGlobalScope !== 'undefined' &&
       self instanceof WorkerGlobalScope;
 
-    // We only use multi-threading if the browser has threads and we're in a Worker context
-    // This is a caveat of threading library we use (wasm-bindgen-rayon)
-    if (isWorker && hasHardwareConcurrency && (await threads())) {
-      wasmReady = initMT(moduleOrPath);
-    } else {
-      wasmReady = initST(moduleOrPath);
-    }
+    // Sequenced behind a reclaim that is still running: the generated glue
+    // keeps one slot for the module, so an instantiation overlapping a
+    // teardown would have its instance torn out from under it.
+    const reclaiming = teardown;
+    const build = async () =>
+      // We only use multi-threading if the browser has threads and we're in a Worker context
+      // This is a caveat of threading library we use (wasm-bindgen-rayon)
+      isWorker && hasHardwareConcurrency && (await threads())
+        ? initMT(retainedInput)
+        : initST(retainedInput);
+
+    wasmReady = reclaiming ? reclaiming.then(build) : build();
   }
 
   return wasmReady;
 }
 
-/**
- * Release the module so its WebAssembly.Memory can be garbage collected.
- *
- * Only call this once outstanding work has settled. On the threaded build the
- * rayon worker pool is not torn down, so memory is only fully reclaimed once
- * those workers are gone too.
- */
-export function dispose(): void {
-  const pending = wasmReady;
-  wasmReady = undefined;
+/** Tear down what dispose() retired, now that nothing is using it. */
+function reclaim(): void {
+  if (!retiring) return;
 
-  void pending?.then(
-    ({ disposeWasm }) => disposeWasm(),
+  const pending = wasmReady;
+  retiring = false;
+  wasmReady = undefined;
+  if (!pending) return;
+
+  // Chained rather than fired straight away: an init() still in flight would
+  // otherwise install its instance after the teardown had run. The promise is
+  // kept so the next init() can sequence itself behind it.
+  const done = pending.then(
+    ({ disposeWasm }) => {
+      disposeWasm();
+    },
     () => {
       // Never instantiated, so there is nothing to tear down.
     },
   );
+
+  teardown = done;
+  void done.then(() => {
+    if (teardown === done) teardown = undefined;
+  });
+}
+
+/**
+ * Release the module so its WebAssembly.Memory can be garbage collected.
+ *
+ * Safe to call with work outstanding: the reclaim waits for the last call
+ * using the module to finish. On the threaded build the rayon worker pool is
+ * not torn down, so memory is only fully reclaimed once those workers are
+ * gone too.
+ */
+export function dispose(): void {
+  if (!wasmReady) return;
+
+  retiring = true;
+  if (inFlight === 0) reclaim();
 }
 
 export default async function optimise(
@@ -103,23 +148,30 @@ export default async function optimise(
   options: Partial<OptimiseOptions> = {},
 ): Promise<ArrayBuffer> {
   const _options = { ...defaultOptions, ...options };
-  const { optimise, optimise_raw } = await init();
 
-  if (data instanceof ImageData) {
-    return optimise_raw(
-      data.data,
-      data.width,
-      data.height,
+  inFlight++;
+  try {
+    const { optimise, optimise_raw } = await init();
+
+    if (data instanceof ImageData) {
+      return optimise_raw(
+        data.data,
+        data.width,
+        data.height,
+        _options.level,
+        _options.interlace,
+        _options.optimiseAlpha,
+      ).buffer;
+    }
+
+    return optimise(
+      new Uint8Array(data),
       _options.level,
       _options.interlace,
       _options.optimiseAlpha,
     ).buffer;
+  } finally {
+    inFlight--;
+    if (inFlight === 0) reclaim();
   }
-
-  return optimise(
-    new Uint8Array(data),
-    _options.level,
-    _options.interlace,
-    _options.optimiseAlpha,
-  ).buffer;
 }

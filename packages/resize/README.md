@@ -79,6 +79,11 @@ initHqx(HQX_WASM_MODULE);
 initMagicKernel(MAGIC_KERNEL_WASM_MODULE);
 ```
 
+What you pass is kept, not just used: after a [`dispose()`](#releasing-memory)
+the next resize re-instantiates from the same wasm, so a runtime that cannot
+fetch its own binary never has to. It has to be something usable more than
+once - a compiled `WebAssembly.Module` or the bytes, not a `Response`.
+
 ## Releasing memory
 
 WebAssembly heaps grow but never shrink. A long-lived Worker, Cloudflare
@@ -95,7 +100,14 @@ const output = await resize(imageData, { width: 400, height: 300 });
 dispose();
 ```
 
-Only call it once outstanding work has settled - any typed array still
-pointing into the old heap is detached.
+Safe to call at any time, including with work outstanding: each call in
+flight keeps the module it is running on, and the reclaim happens once the
+last of them has finished. Images already handed back are copies, and stay
+valid.
+
+The wasm given to `initResize()`, `initHqx()` and `initMagicKernel()` is kept,
+so the resize after a `dispose()` re-instantiates from the same binary rather
+than reaching for one over the network - which is the difference between
+working and not in a runtime that cannot fetch.
 
 This releases the resize, hqx and magic-kernel modules together.

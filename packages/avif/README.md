@@ -229,6 +229,10 @@ initAvifDecode(null, {
 const image = await fetch('./image.avif').then(res => res.arrayBuffer()).then(decode);
 ```
 
+What you pass is kept, not just used: after a [`dispose()`](#releasing-memory)
+the next call re-instantiates from the same module and options, so a runtime
+that cannot fetch its own binary never has to.
+
 ## Known Issues
 
 See [jSquash Project README](https://github.com/jamsinclair/jSquash#known-issues)
@@ -254,5 +258,12 @@ import { disposeEncoder, disposeDecoder } from '@jsquash/avif';
 disposeEncoder();
 ```
 
-Only call it once outstanding work has settled - any typed array still
-pointing into the old heap is detached.
+Safe to call at any time, including with work outstanding: each call in
+flight keeps the module it is running on, and the reclaim happens once the
+last of them has finished. Images already handed back are copies, and stay
+valid.
+
+The wasm and options given to `init()` are kept, so the call after a
+`dispose()` re-instantiates from the same binary rather than reaching for one
+over the network - which is the difference between working and not in a
+runtime that cannot fetch.

@@ -17,7 +17,7 @@
  */
 
 import type { MozJPEGModule } from './codec/dec/mozjpeg_dec.js';
-import { disposeEmscriptenModule, initEmscriptenModule } from './utils.js';
+import { createModuleCache } from './utils.js';
 
 import mozjpeg_dec from './codec/dec/mozjpeg_dec.js';
 import { DecodeOptions, defaultDecodeOptions } from './meta.js';
@@ -25,31 +25,28 @@ import type { DecodedImage, ImageMetadata } from './meta.js';
 
 export type { DecodedImage, ImageMetadata };
 
-let emscriptenModule: Promise<MozJPEGModule> | undefined;
+const codecModule = createModuleCache<MozJPEGModule>(() => mozjpeg_dec);
 
-export async function init(
+/**
+ * Instantiate the module up front, optionally from wasm you supply.
+ *
+ * Both the module and the option overrides are remembered, so the
+ * re-instantiation after a `dispose()` uses them again rather than falling
+ * back to fetching the binary - which is not something every runtime this
+ * library targets can do.
+ */
+export function init(
   moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
 ): Promise<MozJPEGModule>;
-export async function init(
+export function init(
   module?: WebAssembly.Module,
   moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
+): Promise<MozJPEGModule>;
+export function init(
+  module?: WebAssembly.Module | Partial<EmscriptenWasm.ModuleOpts>,
+  moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
 ): Promise<MozJPEGModule> {
-  let actualModule: WebAssembly.Module | undefined = module;
-  let actualOptions: Partial<EmscriptenWasm.ModuleOpts> | undefined =
-    moduleOptionOverrides;
-
-  // If only one argument is provided and it's not a WebAssembly.Module
-  if (arguments.length === 1 && !(module instanceof WebAssembly.Module)) {
-    actualModule = undefined;
-    actualOptions = module as unknown as Partial<EmscriptenWasm.ModuleOpts>;
-  }
-
-  emscriptenModule = initEmscriptenModule(
-    mozjpeg_dec,
-    actualModule,
-    actualOptions,
-  );
-  return emscriptenModule;
+  return codecModule.init(module, moduleOptionOverrides);
 }
 
 /**
@@ -58,24 +55,22 @@ export async function init(
  * Emscripten heaps grow but never shrink, so a long-lived worker that has
  * decoded a single large image holds that peak allocation for the rest of
  * its life. The next call re-instantiates the module on demand.
+ *
+ * Safe to call with work outstanding: each call keeps the module it is
+ * running on, and the reclaim happens once the last of them has finished.
  */
-export function dispose(): void {
-  const pending = emscriptenModule;
-  emscriptenModule = undefined;
-  disposeEmscriptenModule(pending);
-}
+export const dispose = codecModule.dispose;
 
 export default async function decode(
   buffer: ArrayBuffer,
   options: Partial<DecodeOptions> = {},
 ): Promise<ImageData> {
-  if (!emscriptenModule) emscriptenModule = init();
-
   const _options = { ...defaultDecodeOptions, ...options };
-  const module = await emscriptenModule;
-  const result = module.decode(buffer, _options.preserveOrientation);
-  if (!result) throw new Error('Decoding error');
-  return result;
+  return codecModule.use((codec) => {
+    const result = codec.decode(buffer, _options.preserveOrientation);
+    if (!result) throw new Error('Decoding error');
+    return result;
+  });
 }
 
 /**
@@ -96,21 +91,20 @@ export async function decodeWithMetadata(
   buffer: ArrayBuffer,
   options: Partial<DecodeOptions> = {},
 ): Promise<DecodedImage<ImageData>> {
-  if (!emscriptenModule) emscriptenModule = init();
-
   const _options = { ...defaultDecodeOptions, ...options };
-  const module = await emscriptenModule;
-  const result = module.decode_with_metadata(
-    buffer,
-    _options.preserveOrientation,
-  );
-  if (!result) throw new Error('Decoding error');
+  return codecModule.use((codec) => {
+    const result = codec.decode_with_metadata(
+      buffer,
+      _options.preserveOrientation,
+    );
+    if (!result) throw new Error('Decoding error');
 
-  const metadata: ImageMetadata = {};
-  if (result.metadata.icc) metadata.icc = result.metadata.icc;
-  if (result.metadata.exif) metadata.exif = result.metadata.exif;
+    const metadata: ImageMetadata = {};
+    if (result.metadata.icc) metadata.icc = result.metadata.icc;
+    if (result.metadata.exif) metadata.exif = result.metadata.exif;
 
-  return { image: result.image, metadata };
+    return { image: result.image, metadata };
+  });
 }
 
 /**
@@ -124,12 +118,11 @@ export async function decodeWithMetadata(
  * metadata is advisory, and a file whose pixels decode perfectly well should
  * not fail over a malformed ancillary marker.
  */
-export async function readIccProfile(
+export function readIccProfile(
   buffer: ArrayBuffer,
 ): Promise<Uint8Array | undefined> {
-  if (!emscriptenModule) emscriptenModule = init();
-
-  const module = await emscriptenModule;
-  const icc = module.read_icc_profile(buffer);
-  return icc && icc.length > 0 ? icc : undefined;
+  return codecModule.use((codec) => {
+    const icc = codec.read_icc_profile(buffer);
+    return icc && icc.length > 0 ? icc : undefined;
+  });
 }

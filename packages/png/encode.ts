@@ -20,7 +20,7 @@ import {
   encode as pngEncode,
   encode_with_icc_profile as pngEncodeWithIccProfile,
 } from './codec/pkg/squoosh_png.js';
-import { init, dispose } from './init.js';
+import { init, dispose, use } from './init.js';
 import { toIccProfileBytes } from './meta.js';
 import type { IccProfileInput } from './meta.js';
 
@@ -94,8 +94,6 @@ export default async function encode(
   data: ImageData | ImageDataRGBA16,
   options: EncodeOptions = {},
 ): Promise<ArrayBuffer> {
-  await init();
-
   const bitDepth = options?.bitDepth ?? 8;
 
   if (bitDepth !== 8 && bitDepth !== 16) {
@@ -140,24 +138,26 @@ export default async function encode(
   const icc =
     options.icc === undefined ? undefined : toIccProfileBytes(options.icc);
 
-  const output =
-    icc === undefined
-      ? await pngEncode(
-          encodeData,
-          data.width,
-          data.height,
-          bitDepth,
-          compression,
-        )
-      : await pngEncodeWithIccProfile(
-          encodeData,
-          data.width,
-          data.height,
-          bitDepth,
-          compression,
-          icc,
-        );
-  if (!output) throw new Error('Encoding error.');
+  return use(async () => {
+    const output =
+      icc === undefined
+        ? await pngEncode(
+            encodeData,
+            data.width,
+            data.height,
+            bitDepth,
+            compression,
+          )
+        : await pngEncodeWithIccProfile(
+            encodeData,
+            data.width,
+            data.height,
+            bitDepth,
+            compression,
+            icc,
+          );
+    if (!output) throw new Error('Encoding error.');
 
-  return output.buffer;
+    return output.buffer;
+  });
 }

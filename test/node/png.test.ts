@@ -3,6 +3,7 @@ import { importWasmModule, getFixturesImage } from './utils.js';
 
 import {
   init as initDecode,
+  dispose as disposeCodec,
   decode,
   decodeWithMetadata,
   readIccProfile,
@@ -536,3 +537,58 @@ test('an unknown compression level is rejected by name', async (t) => {
   );
   t.regex(error!.message, /Invalid compression 'maximum'/);
 });
+
+/**
+ * The encoder and decoder share one wasm-bindgen module, so its lifecycle is
+ * checked once, over both. Serial because it turns that module over: AVA runs
+ * serial tests before the concurrent ones, so nothing else is holding it.
+ */
+test.serial(
+  'encode and decode survive dispose() without being re-initialised',
+  async (t) => {
+    const [testImage, wasm] = await Promise.all([
+      getFixturesImage('test.png'),
+      importWasmModule(PNG_WASM),
+    ]);
+
+    await initDecode(wasm);
+    const before = await decode(testImage);
+
+    // Nothing re-initialises after this. Without the module kept from the
+    // init() above, the glue falls back to fetching its own binary, which
+    // fails here and in a Cloudflare Worker alike.
+    disposeCodec();
+
+    const after = await decode(testImage);
+    t.deepEqual(after.data, before.data, 'decodes again after dispose()');
+
+    disposeCodec();
+    const reencoded = await encode(after);
+    t.deepEqual(
+      (await decode(reencoded)).data,
+      before.data,
+      'encodes again after dispose()',
+    );
+  },
+);
+
+test.serial(
+  'dispose() during a decode leaves that decode intact',
+  async (t) => {
+    const [testImage, wasm] = await Promise.all([
+      getFixturesImage('test.png'),
+      importWasmModule(PNG_WASM),
+    ]);
+
+    await initDecode(wasm);
+    const reference = await decode(testImage);
+
+    // The bindings reach for the module through one slot in the generated glue,
+    // so a reclaim landing mid-call would leave this decode without a heap.
+    const inFlight = decode(testImage);
+    disposeCodec();
+
+    t.deepEqual((await inFlight).data, reference.data, 'the in-flight decode');
+    t.deepEqual((await decode(testImage)).data, reference.data, 'the next');
+  },
+);

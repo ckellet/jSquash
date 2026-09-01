@@ -37,7 +37,10 @@ Four things here are not in upstream at all:
   long-lived Worker or isolate holds its peak allocation for the rest of its
   life. This hands the memory back. For the Rust-backed packages it needed a
   patch to the generated glue, because wasm-bindgen pins the instance in module
-  scope with no way to release it.
+  scope with no way to release it. It is safe on its own terms: `init()` keeps
+  the wasm it was given, so the call after a `dispose()` re-instantiates from
+  the same binary rather than trying to fetch one, and a reclaim waits for the
+  calls already in flight instead of pulling the heap out from under them.
 - **Single-variant entry points.** `encode-simd`, `encode-mt`, `encode-scalar`
   and their decode equivalents each bind one build statically, so a bundler
   emits one `.wasm` instead of every candidate the runtime dispatch could

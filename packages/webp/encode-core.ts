@@ -11,11 +11,7 @@ import type { WebPModule } from './codec/enc/webp_enc.js';
 import type { EncodeOptions, WebPEncodeOptions } from './meta.js';
 
 import { defaultOptions, toIccProfileBytes } from './meta.js';
-import {
-  disposeEmscriptenModule,
-  initEmscriptenModule,
-  withPixelBuffer,
-} from './utils.js';
+import { createModuleCache, withPixelBuffer } from './utils.js';
 
 /** Resolves the Emscripten factory for whichever build was selected. */
 export type CodecLoader = () => Promise<
@@ -23,30 +19,17 @@ export type CodecLoader = () => Promise<
 >;
 
 export function createEncoder(loadCodec: CodecLoader) {
-  let emscriptenModule: Promise<WebPModule> | undefined;
+  const codecModule = createModuleCache<WebPModule>(loadCodec);
 
-  function init(
-    module?: WebAssembly.Module | Partial<EmscriptenWasm.ModuleOpts>,
-    moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
-  ): Promise<WebPModule> {
-    let actualModule =
-      module instanceof WebAssembly.Module ? module : undefined;
-    let actualOptions = moduleOptionOverrides;
-
-    // If only one argument is provided and it's not a WebAssembly.Module
-    if (arguments.length === 1 && !(module instanceof WebAssembly.Module)) {
-      actualOptions = module as Partial<EmscriptenWasm.ModuleOpts>;
-    }
-
-    // Assign synchronously, before the first await. Callers are documented to
-    // be able to fire init(module) without awaiting it, and two concurrent
-    // calls must share one module rather than each building their own - both
-    // of which stop working the moment this function awaits before assigning.
-    emscriptenModule = (async () =>
-      initEmscriptenModule(await loadCodec(), actualModule, actualOptions))();
-
-    return emscriptenModule;
-  }
+  /**
+   * Instantiate the module up front, optionally from wasm you supply.
+   *
+   * Both the module and the option overrides are remembered, so the
+   * re-instantiation after a `dispose()` uses them again rather than falling
+   * back to fetching the binary - which is not something every runtime this
+   * library targets can do.
+   */
+  const init = codecModule.init;
 
   /**
    * Release the module so its WebAssembly.Memory can be garbage collected.
@@ -54,19 +37,16 @@ export function createEncoder(loadCodec: CodecLoader) {
    * Emscripten heaps grow but never shrink, so a long-lived worker that has
    * encoded a single large image holds that peak allocation for the rest of
    * its life. The next call re-instantiates the module on demand.
+   *
+   * Safe to call with encodes outstanding: each keeps the module it is running
+   * on, and the reclaim happens once the last of them has finished.
    */
-  function dispose(): void {
-    const pending = emscriptenModule;
-    emscriptenModule = undefined;
-    disposeEmscriptenModule(pending);
-  }
+  const dispose = codecModule.dispose;
 
   async function encode(
     data: ImageData,
     options: WebPEncodeOptions = {},
   ): Promise<ArrayBuffer> {
-    if (!emscriptenModule) emscriptenModule = init();
-
     // `icc` is jSquash's, not libwebp's, so it is peeled off before the rest
     // is handed to the WebPConfig binding.
     const { icc, ...config } = options;
@@ -78,23 +58,23 @@ export function createEncoder(loadCodec: CodecLoader) {
     // exactly what it was.
     const profile = icc === undefined ? undefined : toIccProfileBytes(icc);
 
-    const module = await emscriptenModule;
+    return codecModule.use((codec) => {
+      const result = withPixelBuffer(codec, data.data, (pointer) =>
+        profile === undefined
+          ? codec.encode(pointer, data.width, data.height, _options)
+          : codec.encode_with_icc_profile(
+              pointer,
+              data.width,
+              data.height,
+              _options,
+              profile,
+            ),
+      );
 
-    const result = withPixelBuffer(module, data.data, (pointer) =>
-      profile === undefined
-        ? module.encode(pointer, data.width, data.height, _options)
-        : module.encode_with_icc_profile(
-            pointer,
-            data.width,
-            data.height,
-            _options,
-            profile,
-          ),
-    );
+      if (!result) throw new Error('Encoding error.');
 
-    if (!result) throw new Error('Encoding error.');
-
-    return result.buffer;
+      return result.buffer;
+    });
   }
 
   return { init, dispose, encode };

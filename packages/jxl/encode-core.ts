@@ -14,11 +14,7 @@ import type { EncodeOptions } from './meta.js';
 import type { JXLModule } from './codec/enc/jxl_enc.js';
 
 import { defaultOptions } from './meta.js';
-import {
-  disposeEmscriptenModule,
-  initEmscriptenModule,
-  withPixelBuffer,
-} from './utils.js';
+import { createModuleCache, withPixelBuffer } from './utils.js';
 
 /** Resolves the Emscripten factory for whichever build was selected. */
 export type CodecLoader = () => Promise<
@@ -26,30 +22,17 @@ export type CodecLoader = () => Promise<
 >;
 
 export function createEncoder(loadCodec: CodecLoader) {
-  let emscriptenModule: Promise<JXLModule> | undefined;
+  const codecModule = createModuleCache<JXLModule>(loadCodec);
 
-  function init(
-    module?: WebAssembly.Module | Partial<EmscriptenWasm.ModuleOpts>,
-    moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
-  ): Promise<JXLModule> {
-    let actualModule =
-      module instanceof WebAssembly.Module ? module : undefined;
-    let actualOptions = moduleOptionOverrides;
-
-    // If only one argument is provided and it's not a WebAssembly.Module
-    if (arguments.length === 1 && !(module instanceof WebAssembly.Module)) {
-      actualOptions = module as Partial<EmscriptenWasm.ModuleOpts>;
-    }
-
-    // Assign synchronously, before the first await. Callers are documented to
-    // be able to fire init(module) without awaiting it, and two concurrent
-    // calls must share one module rather than each building their own - both
-    // of which stop working the moment this function awaits before assigning.
-    emscriptenModule = (async () =>
-      initEmscriptenModule(await loadCodec(), actualModule, actualOptions))();
-
-    return emscriptenModule;
-  }
+  /**
+   * Instantiate the module up front, optionally from wasm you supply.
+   *
+   * Both the module and the option overrides are remembered, so the
+   * re-instantiation after a `dispose()` uses them again rather than falling
+   * back to fetching the binary - which is not something every runtime this
+   * library targets can do.
+   */
+  const init = codecModule.init;
 
   /**
    * Release the module so its WebAssembly.Memory can be garbage collected.
@@ -57,54 +40,52 @@ export function createEncoder(loadCodec: CodecLoader) {
    * Emscripten heaps grow but never shrink, so a long-lived worker that has
    * encoded a single large image holds that peak allocation for the rest of
    * its life. The next call re-instantiates the module on demand.
+   *
+   * Safe to call with encodes outstanding: each keeps the module it is running
+   * on, and the reclaim happens once the last of them has finished.
    */
-  function dispose(): void {
-    const pending = emscriptenModule;
-    emscriptenModule = undefined;
-    disposeEmscriptenModule(pending);
-  }
+  const dispose = codecModule.dispose;
 
-  async function encode(
+  function encode(
     data: ImageData,
     options: Partial<EncodeOptions> = {},
   ): Promise<ArrayBuffer> {
-    if (!emscriptenModule) emscriptenModule = init();
+    return codecModule.use((codec) => {
+      const _options = { ...defaultOptions, ...options };
 
-    const module = await emscriptenModule;
-    const _options = { ...defaultOptions, ...options };
+      if (_options.lossless) {
+        if (options.quality !== undefined && options.quality !== 100) {
+          console.warn(
+            'JXL lossless: Quality setting is ignored when lossless is enabled (quality must be 100).',
+          );
+        }
 
-    if (_options.lossless) {
-      if (options.quality !== undefined && options.quality !== 100) {
-        console.warn(
-          'JXL lossless: Quality setting is ignored when lossless is enabled (quality must be 100).',
-        );
+        if (options.lossyModular) {
+          console.warn(
+            'JXL lossless: LossyModular setting is ignored when lossless is enabled (lossyModular must be false).',
+          );
+        }
+
+        if (options.lossyPalette) {
+          console.warn(
+            'JXL lossless: LossyPalette setting is ignored when lossless is enabled (lossyPalette must be false).',
+          );
+        }
+
+        _options.quality = 100;
+        _options.lossyModular = false;
+        _options.lossyPalette = false;
       }
 
-      if (options.lossyModular) {
-        console.warn(
-          'JXL lossless: LossyModular setting is ignored when lossless is enabled (lossyModular must be false).',
-        );
+      const resultView = withPixelBuffer(codec, data.data, (pointer) =>
+        codec.encode(pointer, data.width, data.height, _options),
+      );
+      if (!resultView) {
+        throw new Error('Encoding error.');
       }
 
-      if (options.lossyPalette) {
-        console.warn(
-          'JXL lossless: LossyPalette setting is ignored when lossless is enabled (lossyPalette must be false).',
-        );
-      }
-
-      _options.quality = 100;
-      _options.lossyModular = false;
-      _options.lossyPalette = false;
-    }
-
-    const resultView = withPixelBuffer(module, data.data, (pointer) =>
-      module.encode(pointer, data.width, data.height, _options),
-    );
-    if (!resultView) {
-      throw new Error('Encoding error.');
-    }
-
-    return resultView.buffer as ArrayBuffer;
+      return resultView.buffer as ArrayBuffer;
+    });
   }
 
   return { init, dispose, encode };

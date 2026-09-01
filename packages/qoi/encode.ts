@@ -18,33 +18,30 @@
 import type { QOIModule } from './codec/enc/qoi_enc.js';
 
 import qoi_enc from './codec/enc/qoi_enc.js';
-import {
-  disposeEmscriptenModule,
-  initEmscriptenModule,
-  withPixelBuffer,
-} from './utils.js';
+import { createModuleCache, withPixelBuffer } from './utils.js';
 
-let emscriptenModule: Promise<QOIModule> | undefined;
+const codecModule = createModuleCache<QOIModule>(() => qoi_enc);
 
-export async function init(
+/**
+ * Instantiate the module up front, optionally from wasm you supply.
+ *
+ * Both the module and the option overrides are remembered, so the
+ * re-instantiation after a `dispose()` uses them again rather than falling
+ * back to fetching the binary - which is not something every runtime this
+ * library targets can do.
+ */
+export function init(
   moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
 ): Promise<QOIModule>;
-export async function init(
+export function init(
   module?: WebAssembly.Module,
   moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
+): Promise<QOIModule>;
+export function init(
+  module?: WebAssembly.Module | Partial<EmscriptenWasm.ModuleOpts>,
+  moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
 ): Promise<QOIModule> {
-  let actualModule: WebAssembly.Module | undefined = module;
-  let actualOptions: Partial<EmscriptenWasm.ModuleOpts> | undefined =
-    moduleOptionOverrides;
-
-  // If only one argument is provided and it's not a WebAssembly.Module
-  if (arguments.length === 1 && !(module instanceof WebAssembly.Module)) {
-    actualModule = undefined;
-    actualOptions = module as unknown as Partial<EmscriptenWasm.ModuleOpts>;
-  }
-
-  emscriptenModule = initEmscriptenModule(qoi_enc, actualModule, actualOptions);
-  return emscriptenModule;
+  return codecModule.init(module, moduleOptionOverrides);
 }
 
 /**
@@ -53,24 +50,21 @@ export async function init(
  * Emscripten heaps grow but never shrink, so a long-lived worker that has
  * encoded a single large image holds that peak allocation for the rest of
  * its life. The next call re-instantiates the module on demand.
+ *
+ * Safe to call with work outstanding: each call keeps the module it is
+ * running on, and the reclaim happens once the last of them has finished.
  */
-export function dispose(): void {
-  const pending = emscriptenModule;
-  emscriptenModule = undefined;
-  disposeEmscriptenModule(pending);
-}
+export const dispose = codecModule.dispose;
 
-export default async function encode(data: ImageData): Promise<ArrayBuffer> {
-  if (!emscriptenModule) emscriptenModule = init();
+export default function encode(data: ImageData): Promise<ArrayBuffer> {
+  return codecModule.use((codec) => {
+    const resultView = withPixelBuffer(codec, data.data, (pointer) =>
+      codec.encode(pointer, data.width, data.height),
+    );
 
-  const module = await emscriptenModule;
+    if (!resultView) throw new Error('Encoding error.');
 
-  const resultView = withPixelBuffer(module, data.data, (pointer) =>
-    module.encode(pointer, data.width, data.height),
-  );
-
-  if (!resultView) throw new Error('Encoding error.');
-
-  // wasm can't run on SharedArrayBuffers, so we hard-cast to ArrayBuffer.
-  return resultView.buffer as ArrayBuffer;
+    // wasm can't run on SharedArrayBuffers, so we hard-cast to ArrayBuffer.
+    return resultView.buffer as ArrayBuffer;
+  });
 }

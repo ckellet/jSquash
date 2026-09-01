@@ -73,6 +73,11 @@ init(WASM_MODULE); // The `WASM_MODULE` variable will need to be sourced by your
 const image = await fetch('./image.png').then(res => res.arrayBuffer()).then(optimise);
 ```
 
+What you pass is kept, not just used: after a [`dispose()`](#releasing-memory)
+the next call re-instantiates from the same wasm, so a runtime that cannot
+fetch its own binary never has to. It has to be something usable more than
+once - a compiled `WebAssembly.Module` or the bytes, not a `Response`.
+
 ## Releasing memory
 
 WebAssembly heaps grow but never shrink. A long-lived Worker, Cloudflare
@@ -89,8 +94,15 @@ const output = await optimise(pngBuffer);
 dispose();
 ```
 
-Only call it once outstanding work has settled - any typed array still
-pointing into the old heap is detached.
+Safe to call at any time, including with work outstanding: each call in
+flight keeps the module it is running on, and the reclaim happens once the
+last of them has finished. Images already handed back are copies, and stay
+valid.
+
+The wasm and options given to `init()` are kept, so the call after a
+`dispose()` re-instantiates from the same binary rather than reaching for one
+over the network - which is the difference between working and not in a
+runtime that cannot fetch.
 
 On the multi-threaded build the rayon worker pool is not torn down, so
 memory is only fully reclaimed once those workers are gone as well.

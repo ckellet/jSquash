@@ -68,6 +68,106 @@ export function disposeEmscriptenModule(
   );
 }
 
+/**
+ * Instantiate-once storage for a codec module, with the lifecycle every entry
+ * point needs: built on first use, replaceable through `init()`, and handed
+ * back to the runtime by `dispose()`.
+ *
+ * Two of those details are easy to get wrong in ways that only surface in
+ * production, so they live here rather than at each call site:
+ *
+ * - `init(module)` remembers the module it was given, rather than only using
+ *   it. Re-instantiating after a `dispose()` needs the same binary, and a
+ *   runtime that cannot fetch its own `.wasm` - Cloudflare Workers being the
+ *   one this matters for - has no other way to get it back. What is held is
+ *   the compiled `WebAssembly.Module`, which is code rather than heap, so it
+ *   does not pin the memory `dispose()` just released.
+ *
+ * - Work in flight pins the instance it is running on, and `dispose()`
+ *   reclaims at the next idle moment rather than immediately. That is what
+ *   makes it safe to call while calls are outstanding: it cannot pull the
+ *   heap out from under a decode that is halfway through, and it does not
+ *   leave a second heap alive by re-instantiating alongside one still in use.
+ */
+export function createModuleCache<T extends EmscriptenWasm.Module>(
+  loadFactory: () =>
+    EmscriptenWasm.ModuleFactory<T> | Promise<EmscriptenWasm.ModuleFactory<T>>,
+) {
+  let instance: Promise<T> | undefined;
+  let inFlight = 0;
+
+  /** Instances a dispose() is waiting on. Empty unless one is outstanding. */
+  const retiring: Promise<T>[] = [];
+
+  let retainedModule: WebAssembly.Module | undefined;
+  let retainedOptions: Partial<EmscriptenWasm.ModuleOpts> | undefined;
+
+  function instantiate(): Promise<T> {
+    // Assigned synchronously, before the first await. Callers are documented
+    // to be able to fire init(module) without awaiting it, and two concurrent
+    // calls must share one module rather than each building their own - both
+    // of which stop working the moment this function awaits before assigning.
+    instance = (async () =>
+      initEmscriptenModule(
+        await loadFactory(),
+        retainedModule,
+        retainedOptions,
+      ))();
+
+    return instance;
+  }
+
+  /** Tear down whatever dispose() retired, now that nothing is using it. */
+  function reclaim(): void {
+    for (const pending of retiring.splice(0)) {
+      // An init() since the dispose() has already moved new callers onto a
+      // different instance, which stays.
+      if (instance === pending) instance = undefined;
+      disposeEmscriptenModule(pending);
+    }
+  }
+
+  function init(
+    module?: WebAssembly.Module | Partial<EmscriptenWasm.ModuleOpts> | null,
+    moduleOptionOverrides?: Partial<EmscriptenWasm.ModuleOpts>,
+  ): Promise<T> {
+    if (module instanceof WebAssembly.Module) {
+      retainedModule = module;
+      retainedOptions = moduleOptionOverrides;
+    } else {
+      // `init(options)` and `init(null, options)` are both documented, so the
+      // options can arrive in either position.
+      retainedModule = undefined;
+      retainedOptions = moduleOptionOverrides ?? module ?? undefined;
+    }
+
+    return instantiate();
+  }
+
+  function dispose(): void {
+    if (!instance || retiring.includes(instance)) return;
+
+    retiring.push(instance);
+    if (inFlight === 0) reclaim();
+  }
+
+  /**
+   * Run `job` against the module, instantiating one if there is none, and
+   * keeping it alive until the job settles.
+   */
+  async function use<R>(job: (module: T) => R | Promise<R>): Promise<R> {
+    inFlight++;
+    try {
+      return await job(await (instance ?? instantiate()));
+    } finally {
+      inFlight--;
+      if (inFlight === 0) reclaim();
+    }
+  }
+
+  return { init, dispose, use };
+}
+
 export interface PixelBufferModule extends EmscriptenWasm.Module {
   /** Allocate `size` bytes inside the module heap; returns a pointer. */
   create_buffer(size: number): number;

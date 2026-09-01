@@ -22,7 +22,7 @@ import {
   decode_rgba16 as pngDecodeRgba16Wasm,
   read_icc_profile as pngReadIccProfileWasm,
 } from './codec/pkg/squoosh_png.js';
-import { init, dispose } from './init.js';
+import { init, dispose, use } from './init.js';
 import type { DecodedImage, ImageMetadata } from './meta.js';
 
 export { init, dispose };
@@ -44,21 +44,21 @@ export async function decode(
   data: ArrayBuffer,
   options: DecodeOptions = {},
 ): Promise<ImageData | ImageDataRGBA16> {
-  await init();
-
   const { bitDepth = 8 } = options;
 
-  if (bitDepth === 16) {
-    const imageData = await pngDecodeRgba16Wasm(new Uint8Array(data));
+  return use(async () => {
+    if (bitDepth === 16) {
+      const imageData = await pngDecodeRgba16Wasm(new Uint8Array(data));
+      if (!imageData) throw new Error('Encoding error.');
+      return imageData;
+    }
+
+    const imageData = await pngDecodeWasm(new Uint8Array(data));
+
     if (!imageData) throw new Error('Encoding error.');
+
     return imageData;
-  }
-
-  const imageData = await pngDecodeWasm(new Uint8Array(data));
-
-  if (!imageData) throw new Error('Encoding error.');
-
-  return imageData;
+  });
 }
 
 /**
@@ -86,27 +86,27 @@ export async function decodeWithMetadata(
   data: ArrayBuffer,
   options: DecodeOptions = {},
 ): Promise<DecodedImage<ImageData | ImageDataRGBA16>> {
-  await init();
-
   const { bitDepth = 8 } = options;
   const bytes = new Uint8Array(data);
 
-  const image =
-    bitDepth === 16
-      ? await pngDecodeRgba16Wasm(bytes)
-      : await pngDecodeWasm(bytes);
-  if (!image) throw new Error('Encoding error.');
+  return use(async () => {
+    const image =
+      bitDepth === 16
+        ? await pngDecodeRgba16Wasm(bytes)
+        : await pngDecodeWasm(bytes);
+    if (!image) throw new Error('Encoding error.');
 
-  // A second pass over the same input, which stops at the first IDAT rather
-  // than decoding anything. That costs one more copy of the *compressed* bytes
-  // across the wasm boundary and buys a pixel path that is untouched for
-  // callers who never ask for metadata.
-  const icc = pngReadIccProfileWasm(bytes);
+    // A second pass over the same input, which stops at the first IDAT rather
+    // than decoding anything. That costs one more copy of the *compressed*
+    // bytes across the wasm boundary and buys a pixel path that is untouched
+    // for callers who never ask for metadata.
+    const icc = pngReadIccProfileWasm(bytes);
 
-  const metadata: ImageMetadata = {};
-  if (icc && icc.length > 0) metadata.icc = icc;
+    const metadata: ImageMetadata = {};
+    if (icc && icc.length > 0) metadata.icc = icc;
 
-  return { image, metadata };
+    return { image, metadata };
+  });
 }
 
 /**
@@ -116,13 +116,13 @@ export async function decodeWithMetadata(
  * is there but unreadable - metadata is advisory, and a file whose pixels
  * decode perfectly well should not fail over a malformed ancillary chunk.
  */
-export async function readIccProfile(
+export function readIccProfile(
   data: ArrayBuffer,
 ): Promise<Uint8Array | undefined> {
-  await init();
-
-  const icc = pngReadIccProfileWasm(new Uint8Array(data));
-  return icc && icc.length > 0 ? icc : undefined;
+  return use(() => {
+    const icc = pngReadIccProfileWasm(new Uint8Array(data));
+    return icc && icc.length > 0 ? icc : undefined;
+  });
 }
 
 export default decode;
