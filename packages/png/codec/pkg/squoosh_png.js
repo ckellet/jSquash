@@ -69,16 +69,6 @@ function passArray8ToWasm0(arg, malloc) {
     WASM_VECTOR_LEN = arg.length;
     return ptr;
 }
-/**
-* @param {Uint8Array} data
-* @returns {ImageDataRGBA16}
-*/
-export function decode_rgba16(data) {
-    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.decode_rgba16(ptr0, len0);
-    return ImageDataRGBA16.__wrap(ret);
-}
 
 let cachedInt32Memory0 = null;
 
@@ -98,14 +88,15 @@ function getArrayU8FromWasm0(ptr, len) {
 * @param {number} width
 * @param {number} height
 * @param {number} bit_depth
+* @param {number} compression
 * @returns {Uint8Array}
 */
-export function encode(data, width, height, bit_depth) {
+export function encode(data, width, height, bit_depth, compression) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        wasm.encode(retptr, ptr0, len0, width, height, bit_depth);
+        wasm.encode(retptr, ptr0, len0, width, height, bit_depth, compression);
         var r0 = getInt32Memory0()[retptr / 4 + 0];
         var r1 = getInt32Memory0()[retptr / 4 + 1];
         var v2 = getArrayU8FromWasm0(r0, r1).slice();
@@ -117,6 +108,17 @@ export function encode(data, width, height, bit_depth) {
 }
 
 /**
+* @param {Uint8Array} data
+* @returns {ImageDataRGBA16}
+*/
+export function decode_rgba16(data) {
+    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decode_rgba16(ptr0, len0);
+    return ImageDataRGBA16.__wrap(ret);
+}
+
+/**
 * As `encode`, but embeds `icc_profile` as an `iCCP` chunk.
 *
 * Kept separate from `encode` rather than added as an optional argument so the
@@ -125,17 +127,18 @@ export function encode(data, width, height, bit_depth) {
 * @param {number} width
 * @param {number} height
 * @param {number} bit_depth
+* @param {number} compression
 * @param {Uint8Array} icc_profile
 * @returns {Uint8Array}
 */
-export function encode_with_icc_profile(data, width, height, bit_depth, icc_profile) {
+export function encode_with_icc_profile(data, width, height, bit_depth, compression, icc_profile) {
     try {
         const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
         const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArray8ToWasm0(icc_profile, wasm.__wbindgen_malloc);
         const len1 = WASM_VECTOR_LEN;
-        wasm.encode_with_icc_profile(retptr, ptr0, len0, width, height, bit_depth, ptr1, len1);
+        wasm.encode_with_icc_profile(retptr, ptr0, len0, width, height, bit_depth, compression, ptr1, len1);
         var r0 = getInt32Memory0()[retptr / 4 + 0];
         var r1 = getInt32Memory0()[retptr / 4 + 1];
         var v3 = getArrayU8FromWasm0(r0, r1).slice();

@@ -89,11 +89,28 @@ fn write_icc_profile<W: Write>(writer: &mut png::Writer<W>, profile: &[u8]) {
         .unwrap_throw();
 }
 
+/// Map the wasm boundary's compression level onto `png`'s preset.
+///
+/// A small integer rather than a string keeps the boundary a scalar. The order
+/// is `png`'s own, weakest first, and `Fastest` is the default the TypeScript
+/// layer sends when a caller says nothing.
+fn compression_from_level(level: u8) -> png::Compression {
+    match level {
+        0 => png::Compression::NoCompression,
+        1 => png::Compression::Fastest,
+        2 => png::Compression::Fast,
+        3 => png::Compression::Balanced,
+        4 => png::Compression::High,
+        _ => panic!("Unsupported compression level: {}", level),
+    }
+}
+
 fn encode_impl(
     data: &[u8],
     width: u32,
     height: u32,
     bit_depth: u8,
+    compression: u8,
     icc_profile: Option<&[u8]>,
 ) -> Vec<u8> {
     let mut buffer = Vec::new();
@@ -120,13 +137,12 @@ fn encode_impl(
         let mut encoder = png::Encoder::new(&mut buffer, width, height);
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(encode_bit_depth);
-        // `png` 0.18 changed its default from fdeflate's ultra-fast path to
-        // `Balanced`, which routes IDAT through flate2. On this workload that
-        // is 35x slower for output that `@jsquash/oxipng` still beats, so this
-        // encoder stays fast and leaves real compression to the optimiser it
-        // ships alongside. `Fastest` is fdeflate paired with the `Up` filter,
-        // which is what 0.18 recommends for that compressor.
-        encoder.set_compression(png::Compression::Fastest);
+        // Defaults to `Fastest` from the TypeScript side, which is fdeflate
+        // paired with the `Up` filter. `png` 0.18's own default is `Balanced`,
+        // which routes image data through flate2: much smaller output, but far
+        // slower. Which of those is right depends on whether the caller runs
+        // `@jsquash/oxipng` afterwards, so it is the caller's choice.
+        encoder.set_compression(compression_from_level(compression));
         let mut writer = encoder.write_header().unwrap_throw();
         // `iCCP` and `sRGB` are mutually exclusive and this encoder writes
         // neither by default, so an embedded profile is always unambiguous.
@@ -140,8 +156,8 @@ fn encode_impl(
 }
 
 #[wasm_bindgen]
-pub fn encode(data: &[u8], width: u32, height: u32, bit_depth: u8) -> Vec<u8> {
-    encode_impl(data, width, height, bit_depth, None)
+pub fn encode(data: &[u8], width: u32, height: u32, bit_depth: u8, compression: u8) -> Vec<u8> {
+    encode_impl(data, width, height, bit_depth, compression, None)
 }
 
 /// As `encode`, but embeds `icc_profile` as an `iCCP` chunk.
@@ -154,9 +170,10 @@ pub fn encode_with_icc_profile(
     width: u32,
     height: u32,
     bit_depth: u8,
+    compression: u8,
     icc_profile: &[u8],
 ) -> Vec<u8> {
-    encode_impl(data, width, height, bit_depth, Some(icc_profile))
+    encode_impl(data, width, height, bit_depth, compression, Some(icc_profile))
 }
 
 /// Read the `iCCP` chunk without decoding any pixels.

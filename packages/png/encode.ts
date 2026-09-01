@@ -33,8 +33,43 @@ type ImageDataRGBA16 = {
   height: number;
 };
 
+/**
+ * How hard the encoder works to shrink the image data.
+ *
+ * These are `png`'s own presets, weakest first. `fastest` and `fast` use
+ * fdeflate; `balanced` and `high` route the data through flate2, which is
+ * much slower and much smaller.
+ *
+ * The right choice depends on what happens next. If you run the output
+ * through `@jsquash/oxipng`, stay on `fastest`: oxipng recompresses the image
+ * data from scratch, so anything spent here is spent twice, and it reaches a
+ * smaller file than `balanced` does. If this encoder is the last step, and you
+ * would rather pay time than bytes, `balanced` is the useful setting.
+ *
+ * Measured on the 1024x768 bench image: `fastest` is 2.03 MB in 7 ms,
+ * `balanced` 1.28 MB in 238 ms, and `fastest` followed by oxipng at level 2
+ * is 1.13 MB in about 810 ms.
+ */
+export type CompressionLevel =
+  'none' | 'fastest' | 'fast' | 'balanced' | 'high';
+
+/** Boundary encoding: `png`'s preset order, weakest first. */
+const COMPRESSION_LEVELS: Record<CompressionLevel, number> = {
+  none: 0,
+  fastest: 1,
+  fast: 2,
+  balanced: 3,
+  high: 4,
+};
+
 export interface EncodeOptions {
   bitDepth?: 8 | 16;
+  /**
+   * Defaults to `fastest`, which is what this package has always produced.
+   * `png` 0.18's own default is `balanced`; taking that silently would have
+   * been a 35x slowdown, so it is opt-in. See {@link CompressionLevel}.
+   */
+  compression?: CompressionLevel;
   /**
    * ICC profile to embed as an `iCCP` chunk, as handed back by
    * `decodeWithMetadata`. Omit it and the output carries no profile, exactly as
@@ -67,6 +102,18 @@ export default async function encode(
     throw new Error('Invalid bit depth. Must be either 8 or 16.');
   }
 
+  const compressionName = options?.compression ?? 'fastest';
+  const compression = COMPRESSION_LEVELS[compressionName];
+  // Validated here so the error names the option, rather than reaching the
+  // codec as an out-of-range integer and panicking.
+  if (compression === undefined) {
+    throw new Error(
+      `Invalid compression '${compressionName}'. Expected one of: ${Object.keys(
+        COMPRESSION_LEVELS,
+      ).join(', ')}.`,
+    );
+  }
+
   const isUint16Array = data.data instanceof Uint16Array;
   if (isUint16Array && bitDepth !== 16) {
     throw new Error(
@@ -95,12 +142,19 @@ export default async function encode(
 
   const output =
     icc === undefined
-      ? await pngEncode(encodeData, data.width, data.height, bitDepth)
+      ? await pngEncode(
+          encodeData,
+          data.width,
+          data.height,
+          bitDepth,
+          compression,
+        )
       : await pngEncodeWithIccProfile(
           encodeData,
           data.width,
           data.height,
           bitDepth,
+          compression,
           icc,
         );
   if (!output) throw new Error('Encoding error.');

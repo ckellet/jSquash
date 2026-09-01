@@ -44,7 +44,7 @@ const imageData8bit = await decode(await formData.get('image').arrayBuffer());
 const imageData16bit = await decode(await formData.get('image').arrayBuffer(), { bitDepth: 16 });
 ```
 
-### encode(data: ImageData | ImageDataRGBA16, options?: { bitDepth?: 8 | 16 }): Promise<ArrayBuffer>
+### encode(data: ImageData | ImageDataRGBA16, options?: { bitDepth?: 8 | 16, compression?: CompressionLevel }): Promise<ArrayBuffer>
 
 > ℹ️ You may want to use the [@jsquash/oxipng](/packages/oxipng) package instead. It can both optimise and encode to PNG directly from raw image data (8-bit images only).
 
@@ -96,6 +96,40 @@ async function create16bitImage(src) {
 const rawImageData = await create16bitImage();
 const png16bitBuffer = await encode(rawImageData, { bitDepth: 16 });
 ```
+
+## Choosing a compression level
+
+`compression` selects how hard the encoder works to shrink the image data.
+It does not affect the pixels - every level decodes to exactly the same image.
+
+| Level | Size | Time | Notes |
+| --- | --- | --- | --- |
+| `none` | 3.00 MB | 1.6 ms | Stored, no compression |
+| `fastest` | 1.99 MB | 6.9 ms | **Default.** fdeflate with the `Up` filter |
+| `fast` | 1.94 MB | 10.5 ms | Rarely worth it over `fastest` |
+| `balanced` | 1.22 MB | 237 ms | flate2; where the size win is |
+| `high` | 1.22 MB | 310 ms | No smaller than `balanced` here, just slower |
+
+Measured on the 1024x768 bench image; your mileage will vary with content.
+
+**Which one you want depends on what happens next.** If you pass the output to
+[@jsquash/oxipng](/packages/oxipng), stay on `fastest`: oxipng recompresses the
+image data from scratch, so effort spent here is spent twice, and it reaches a
+smaller file than `balanced` does anyway (1.13 MB at level 2). If this encoder
+is the last step and you would rather pay time than bytes, `balanced` is the
+setting - `high` costs a third more time for nothing on this image.
+
+```js
+// Last step in the pipeline, and bytes matter more than milliseconds.
+const pngBuffer = await encode(rawImageData, { compression: 'balanced' });
+```
+
+The default stays `fastest`, which is what this package has always produced.
+`png` 0.18's own default is `balanced`; adopting it silently would have been a
+35x encode slowdown, so it is opt-in.
+
+Note that making the slower levels reachable links flate2 into the module,
+which costs about 10 KB brotli whether or not you use them.
 
 ## Colour profiles (ICC)
 

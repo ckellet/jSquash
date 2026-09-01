@@ -4,6 +4,18 @@
 
 ### Added
 
+- `compression` option on `encode`, one of `none`, `fastest`, `fast`,
+  `balanced` or `high`. Defaults to `fastest`, which is what this package has
+  always produced, so existing callers are unaffected. Measured on the
+  1024x768 bench image: `fastest` is 1.99 MB in 6.9 ms, `balanced` 1.22 MB in
+  237 ms, and `high` is no smaller than `balanced` while taking a third longer.
+  Every level decodes to identical pixels.
+
+  Reach for `balanced` when this encoder is the last step and bytes matter more
+  than milliseconds; stay on `fastest` when `@jsquash/oxipng` follows, since it
+  recompresses from scratch and gets smaller anyway. Making the slower levels
+  reachable links flate2, which costs ~10 KB brotli whether or not they are
+  used.
 - ICC colour profile passthrough. Previously the `iCCP` chunk was discarded on
   decode and never written on encode, so a Display P3 or Adobe RGB image
   silently round-tripped as if it were sRGB.
@@ -23,13 +35,12 @@
   the same input, with identical pixels. Encoded output changes slightly - it
   came out 0.4% smaller on the bench image - because 0.18 pairs the fast
   compressor with the `Up` row filter rather than `Sub`.
-- The encoder now asks for `Compression::Fastest` explicitly. `png` 0.18
+- The encoder asks for `Compression::Fastest` unless told otherwise. `png` 0.18
   changed its default to `Balanced`, which routes image data through flate2:
   on the bench image that is 35x slower to encode, for output that
-  `@jsquash/oxipng` still beats (1.28 MB against 1.13 MB at level 2). Staying
-  on the fast compressor also keeps flate2 out of the binary, which would
-  otherwise have added ~19 KB of wasm. Encode a fast PNG here, then optimise
-  it with the optimiser this library ships.
+  `@jsquash/oxipng` still beats (1.28 MB against 1.13 MB at level 2). Adopting
+  that silently would have been a severe regression for anyone already
+  pairing this encoder with the optimiser.
 
 ## @jsquash/png@3.1.1
 

@@ -2,17 +2,18 @@
 /* eslint-disable */
 /**
 * @param {Uint8Array} data
-* @returns {ImageDataRGBA16}
-*/
-export function decode_rgba16(data: Uint8Array): ImageDataRGBA16;
-/**
-* @param {Uint8Array} data
 * @param {number} width
 * @param {number} height
 * @param {number} bit_depth
+* @param {number} compression
 * @returns {Uint8Array}
 */
-export function encode(data: Uint8Array, width: number, height: number, bit_depth: number): Uint8Array;
+export function encode(data: Uint8Array, width: number, height: number, bit_depth: number, compression: number): Uint8Array;
+/**
+* @param {Uint8Array} data
+* @returns {ImageDataRGBA16}
+*/
+export function decode_rgba16(data: Uint8Array): ImageDataRGBA16;
 /**
 * As `encode`, but embeds `icc_profile` as an `iCCP` chunk.
 *
@@ -22,10 +23,11 @@ export function encode(data: Uint8Array, width: number, height: number, bit_dept
 * @param {number} width
 * @param {number} height
 * @param {number} bit_depth
+* @param {number} compression
 * @param {Uint8Array} icc_profile
 * @returns {Uint8Array}
 */
-export function encode_with_icc_profile(data: Uint8Array, width: number, height: number, bit_depth: number, icc_profile: Uint8Array): Uint8Array;
+export function encode_with_icc_profile(data: Uint8Array, width: number, height: number, bit_depth: number, compression: number, icc_profile: Uint8Array): Uint8Array;
 /**
 * Read the `iCCP` chunk without decoding any pixels.
 *
@@ -68,15 +70,15 @@ export interface InitOutput {
   readonly __wbg_imagedatargba16_free: (a: number) => void;
   readonly decode: (a: number, b: number) => number;
   readonly decode_rgba16: (a: number, b: number) => number;
-  readonly encode: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
-  readonly encode_with_icc_profile: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
+  readonly encode: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+  readonly encode_with_icc_profile: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => void;
   readonly imagedatargba16_data: (a: number) => number;
   readonly imagedatargba16_height: (a: number) => number;
   readonly imagedatargba16_width: (a: number) => number;
   readonly read_icc_profile: (a: number, b: number, c: number) => void;
   readonly __wbindgen_free: (a: number, b: number, c: number) => void;
-  readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
+  readonly __wbindgen_malloc: (a: number, b: number) => number;
 }
 
 export type SyncInitInput = BufferSource | WebAssembly.Module;

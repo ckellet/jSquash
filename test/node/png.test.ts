@@ -469,3 +469,70 @@ test('a png with an invalid iCCP checksum still yields its profile', async (t) =
   t.is(metadata.icc?.byteLength, 672);
   t.is(signatureOf(metadata.icc!), 'acsp');
 });
+
+test('compression levels change the bytes but never the pixels', async (t) => {
+  const pngWasm = await importWasmModule(PNG_WASM);
+  await initEncode(pngWasm);
+  initDecode(pngWasm);
+
+  // Gradient-ish content, so the stronger levels have something to find.
+  const width = 64;
+  const height = 64;
+  const data = new Uint8ClampedArray(4 * width * height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4;
+      data[i] = x * 4;
+      data[i + 1] = y * 4;
+      data[i + 2] = (x + y) * 2;
+      data[i + 3] = 255;
+    }
+  }
+  const source = { data, width, height, colorSpace: 'srgb' as const };
+
+  const reference = await decode(await encode(source));
+  const sizes: Record<string, number> = {};
+
+  for (const compression of [
+    'none',
+    'fastest',
+    'fast',
+    'balanced',
+    'high',
+  ] as const) {
+    const encoded = await encode(source, { compression });
+    sizes[compression] = encoded.byteLength;
+    const decoded = await decode(encoded);
+    t.deepEqual(
+      decoded.data,
+      reference.data,
+      `${compression} should decode to the same pixels`,
+    );
+  }
+
+  t.true(
+    sizes.balanced < sizes.fastest,
+    `balanced (${sizes.balanced}) should beat fastest (${sizes.fastest})`,
+  );
+  t.true(
+    sizes.fastest < sizes.none,
+    `fastest (${sizes.fastest}) should beat none (${sizes.none})`,
+  );
+});
+
+test('an unknown compression level is rejected by name', async (t) => {
+  await initEncode(await importWasmModule(PNG_WASM));
+
+  const source = {
+    data: new Uint8ClampedArray(4 * 8 * 8),
+    width: 8,
+    height: 8,
+    colorSpace: 'srgb' as const,
+  };
+
+  const error = await t.throwsAsync(() =>
+    // @ts-expect-error - deliberately not a CompressionLevel
+    encode(source, { compression: 'maximum' }),
+  );
+  t.regex(error!.message, /Invalid compression 'maximum'/);
+});
