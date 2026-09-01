@@ -2,7 +2,7 @@ use rgb::{
     alt::{GRAY16, GRAY8, GRAYA16, GRAYA8},
     AsPixels, FromSlice, RGB16, RGB8, RGBA16, RGBA8,
 };
-use std::io::Write;
+use std::io::{Cursor, Write};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::Clamped;
 
@@ -62,8 +62,9 @@ const ICC_PROFILE_NAME: &[u8] = b"ICC Profile";
 /// defined.
 ///
 /// Deflating through `fdeflate` rather than `flate2` is deliberate. `png` only
-/// reaches for `flate2`'s compressor on non-default settings, so on this build
-/// it is dead code that the linker drops; calling it here would pull all of
+/// reaches for `flate2`'s compressor on non-default settings and for its own
+/// `iCCP` writer, which the encoder gives no way to reach; on this build that
+/// is dead code the linker drops, and calling it here would pull all of
 /// miniz_oxide's deflate back in for +26.9 KB of wasm, against a module that is
 /// otherwise 164 KB. `fdeflate` is already linked - `png` uses it for `IDAT` -
 /// and costs nothing extra. It compresses a profile perhaps 30% worse (a few
@@ -119,6 +120,13 @@ fn encode_impl(
         let mut encoder = png::Encoder::new(&mut buffer, width, height);
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(encode_bit_depth);
+        // `png` 0.18 changed its default from fdeflate's ultra-fast path to
+        // `Balanced`, which routes IDAT through flate2. On this workload that
+        // is 35x slower for output that `@jsquash/oxipng` still beats, so this
+        // encoder stays fast and leaves real compression to the optimiser it
+        // ships alongside. `Fastest` is fdeflate paired with the `Up` filter,
+        // which is what 0.18 recommends for that compressor.
+        encoder.set_compression(png::Compression::Fastest);
         let mut writer = encoder.write_header().unwrap_throw();
         // `iCCP` and `sRGB` are mutually exclusive and this encoder writes
         // neither by default, so an embedded profile is always unambiguous.
@@ -162,8 +170,8 @@ pub fn encode_with_icc_profile(
 /// Metadata is advisory: a file whose pixels decode perfectly well should not
 /// start failing because an ancillary chunk is malformed.
 #[wasm_bindgen]
-pub fn read_icc_profile(mut data: &[u8]) -> Option<Vec<u8>> {
-    let mut decoder = png::Decoder::new(&mut data);
+pub fn read_icc_profile(data: &[u8]) -> Option<Vec<u8>> {
+    let mut decoder = png::Decoder::new(Cursor::new(data));
     decoder.ignore_checksums(true); // Matches `decode`; see GH issue #44.
     let reader = decoder.read_info().ok()?;
     reader.info().icc_profile.as_ref().map(|p| p.to_vec())
@@ -222,15 +230,15 @@ fn buffer_to_u16_iter(buf: &[u8]) -> Vec<u16> {
 }
 
 #[wasm_bindgen]
-pub fn decode(mut data: &[u8]) -> ImageData {
-    let mut decoder = png::Decoder::new(&mut data);
+pub fn decode(data: &[u8]) -> ImageData {
+    let mut decoder = png::Decoder::new(Cursor::new(data));
     decoder.ignore_checksums(true); // Allow images with corrupted checksums ot still be decoded (GH issue #44)
     decoder.set_transformations(
         png::Transformations::EXPAND | // Turn paletted images into RGB
         png::Transformations::STRIP_16, // Turn 16bit into 8 bit
     );
     let mut reader = decoder.read_info().unwrap_throw();
-    let mut buf = vec![0; reader.output_buffer_size()];
+    let mut buf = vec![0; reader.output_buffer_size().unwrap_throw()];
     let info = reader.next_frame(&mut buf).unwrap_throw();
 
     // Transformations::EXPAND will expand indexed palettes and lower-bit
@@ -258,13 +266,13 @@ pub fn decode(mut data: &[u8]) -> ImageData {
 // Almost the same as decode, but explicitly outputs pixels as 16bit.
 // It can decode both 8bit and 16bit PNGs. 8bit values will be converted to 16bit.
 #[wasm_bindgen]
-pub fn decode_rgba16(mut data: &[u8]) -> ImageDataRGBA16 {
-    let mut decoder = png::Decoder::new(&mut data);
+pub fn decode_rgba16(data: &[u8]) -> ImageDataRGBA16 {
+    let mut decoder = png::Decoder::new(Cursor::new(data));
     decoder.ignore_checksums(true);
     decoder.set_transformations(png::Transformations::EXPAND);
 
     let mut reader = decoder.read_info().unwrap_throw();
-    let mut buf = vec![0; reader.output_buffer_size()];
+    let mut buf = vec![0; reader.output_buffer_size().unwrap_throw()];
     let info = reader.next_frame(&mut buf).unwrap_throw();
 
     let mut u16_buffer = match info.bit_depth {

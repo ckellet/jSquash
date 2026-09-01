@@ -11,10 +11,25 @@
       holds the raw profile when the image carries one
     - `readIccProfile` reads the profile without decoding any pixels
     - `encode` accepts an `icc` option to embed a profile
-- `decode` and `encode` are unchanged for callers who do not ask for metadata,
-  and encoder output is byte-for-byte identical when no profile is supplied.
+- `decode` and `encode` are unchanged for callers who do not ask for metadata.
+  Adding a profile is the only thing that changes the bytes; supplying none
+  leaves output exactly as the encoder would otherwise have produced it.
   Profiles are carried, never applied - see
   [docs/colour-management.md](/docs/colour-management.md).
+
+### Changed
+
+- Updates the `png` crate to 0.18.1, from 0.17.10. Decoding is ~8% faster on
+  the same input, with identical pixels. Encoded output changes slightly - it
+  came out 0.4% smaller on the bench image - because 0.18 pairs the fast
+  compressor with the `Up` row filter rather than `Sub`.
+- The encoder now asks for `Compression::Fastest` explicitly. `png` 0.18
+  changed its default to `Balanced`, which routes image data through flate2:
+  on the bench image that is 35x slower to encode, for output that
+  `@jsquash/oxipng` still beats (1.28 MB against 1.13 MB at level 2). Staying
+  on the fast compressor also keeps flate2 out of the binary, which would
+  otherwise have added ~19 KB of wasm. Encode a fast PNG here, then optimise
+  it with the optimiser this library ships.
 
 ## @jsquash/png@3.1.1
 

@@ -1,19 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
-* As `encode`, but embeds `icc_profile` as an `iCCP` chunk.
-*
-* Kept separate from `encode` rather than added as an optional argument so the
-* common path keeps its exact signature and does no extra work.
-* @param {Uint8Array} data
-* @param {number} width
-* @param {number} height
-* @param {number} bit_depth
-* @param {Uint8Array} icc_profile
-* @returns {Uint8Array}
-*/
-export function encode_with_icc_profile(data: Uint8Array, width: number, height: number, bit_depth: number, icc_profile: Uint8Array): Uint8Array;
-/**
 * @param {Uint8Array} data
 * @returns {ImageDataRGBA16}
 */
@@ -27,10 +14,18 @@ export function decode_rgba16(data: Uint8Array): ImageDataRGBA16;
 */
 export function encode(data: Uint8Array, width: number, height: number, bit_depth: number): Uint8Array;
 /**
+* As `encode`, but embeds `icc_profile` as an `iCCP` chunk.
+*
+* Kept separate from `encode` rather than added as an optional argument so the
+* common path keeps its exact signature and does no extra work.
 * @param {Uint8Array} data
-* @returns {ImageData}
+* @param {number} width
+* @param {number} height
+* @param {number} bit_depth
+* @param {Uint8Array} icc_profile
+* @returns {Uint8Array}
 */
-export function decode(data: Uint8Array): ImageData;
+export function encode_with_icc_profile(data: Uint8Array, width: number, height: number, bit_depth: number, icc_profile: Uint8Array): Uint8Array;
 /**
 * Read the `iCCP` chunk without decoding any pixels.
 *
@@ -46,6 +41,11 @@ export function decode(data: Uint8Array): ImageData;
 * @returns {Uint8Array | undefined}
 */
 export function read_icc_profile(data: Uint8Array): Uint8Array | undefined;
+/**
+* @param {Uint8Array} data
+* @returns {ImageData}
+*/
+export function decode(data: Uint8Array): ImageData;
 /**
 */
 export class ImageDataRGBA16 {
@@ -74,9 +74,9 @@ export interface InitOutput {
   readonly imagedatargba16_height: (a: number) => number;
   readonly imagedatargba16_width: (a: number) => number;
   readonly read_icc_profile: (a: number, b: number, c: number) => void;
-  readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
-  readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+  readonly __wbindgen_malloc: (a: number, b: number) => number;
+  readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
 }
 
 export type SyncInitInput = BufferSource | WebAssembly.Module;

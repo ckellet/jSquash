@@ -47,6 +47,20 @@ function getStringFromWasm0(ptr, len) {
     return cachedTextDecoder.decode(getUint8Memory0().subarray(ptr, ptr + len));
 }
 
+let cachedUint8ClampedMemory0 = null;
+
+function getUint8ClampedMemory0() {
+    if (cachedUint8ClampedMemory0 === null || cachedUint8ClampedMemory0.byteLength === 0) {
+        cachedUint8ClampedMemory0 = new Uint8ClampedArray(wasm.memory.buffer);
+    }
+    return cachedUint8ClampedMemory0;
+}
+
+function getClampedArrayU8FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint8ClampedMemory0().subarray(ptr / 1, ptr / 1 + len);
+}
+
 let WASM_VECTOR_LEN = 0;
 
 function passArray8ToWasm0(arg, malloc) {
@@ -54,6 +68,16 @@ function passArray8ToWasm0(arg, malloc) {
     getUint8Memory0().set(arg, ptr / 1);
     WASM_VECTOR_LEN = arg.length;
     return ptr;
+}
+/**
+* @param {Uint8Array} data
+* @returns {ImageDataRGBA16}
+*/
+export function decode_rgba16(data) {
+    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decode_rgba16(ptr0, len0);
+    return ImageDataRGBA16.__wrap(ret);
 }
 
 let cachedInt32Memory0 = null;
@@ -69,6 +93,29 @@ function getArrayU8FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getUint8Memory0().subarray(ptr / 1, ptr / 1 + len);
 }
+/**
+* @param {Uint8Array} data
+* @param {number} width
+* @param {number} height
+* @param {number} bit_depth
+* @returns {Uint8Array}
+*/
+export function encode(data, width, height, bit_depth) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.encode(retptr, ptr0, len0, width, height, bit_depth);
+        var r0 = getInt32Memory0()[retptr / 4 + 0];
+        var r1 = getInt32Memory0()[retptr / 4 + 1];
+        var v2 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_free(r0, r1 * 1, 1);
+        return v2;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
 /**
 * As `encode`, but embeds `icc_profile` as an `iCCP` chunk.
 *
@@ -97,64 +144,6 @@ export function encode_with_icc_profile(data, width, height, bit_depth, icc_prof
     } finally {
         wasm.__wbindgen_add_to_stack_pointer(16);
     }
-}
-
-let cachedUint8ClampedMemory0 = null;
-
-function getUint8ClampedMemory0() {
-    if (cachedUint8ClampedMemory0 === null || cachedUint8ClampedMemory0.byteLength === 0) {
-        cachedUint8ClampedMemory0 = new Uint8ClampedArray(wasm.memory.buffer);
-    }
-    return cachedUint8ClampedMemory0;
-}
-
-function getClampedArrayU8FromWasm0(ptr, len) {
-    ptr = ptr >>> 0;
-    return getUint8ClampedMemory0().subarray(ptr / 1, ptr / 1 + len);
-}
-/**
-* @param {Uint8Array} data
-* @returns {ImageDataRGBA16}
-*/
-export function decode_rgba16(data) {
-    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.decode_rgba16(ptr0, len0);
-    return ImageDataRGBA16.__wrap(ret);
-}
-
-/**
-* @param {Uint8Array} data
-* @param {number} width
-* @param {number} height
-* @param {number} bit_depth
-* @returns {Uint8Array}
-*/
-export function encode(data, width, height, bit_depth) {
-    try {
-        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-        const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        wasm.encode(retptr, ptr0, len0, width, height, bit_depth);
-        var r0 = getInt32Memory0()[retptr / 4 + 0];
-        var r1 = getInt32Memory0()[retptr / 4 + 1];
-        var v2 = getArrayU8FromWasm0(r0, r1).slice();
-        wasm.__wbindgen_free(r0, r1 * 1, 1);
-        return v2;
-    } finally {
-        wasm.__wbindgen_add_to_stack_pointer(16);
-    }
-}
-
-/**
-* @param {Uint8Array} data
-* @returns {ImageData}
-*/
-export function decode(data) {
-    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.decode(ptr0, len0);
-    return takeObject(ret);
 }
 
 /**
@@ -188,6 +177,17 @@ export function read_icc_profile(data) {
     } finally {
         wasm.__wbindgen_add_to_stack_pointer(16);
     }
+}
+
+/**
+* @param {Uint8Array} data
+* @returns {ImageData}
+*/
+export function decode(data) {
+    const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decode(ptr0, len0);
+    return takeObject(ret);
 }
 
 /**
@@ -390,6 +390,6 @@ export function dispose() {
   wasm = undefined;
   __wbg_init.__wbindgen_wasm_module = undefined;
   cachedUint8Memory0 = null;
-  cachedInt32Memory0 = null;
   cachedUint8ClampedMemory0 = null;
+  cachedInt32Memory0 = null;
 }
