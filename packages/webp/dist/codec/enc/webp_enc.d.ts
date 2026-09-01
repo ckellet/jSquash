@@ -1,0 +1,57 @@
+export interface EncodeOptions {
+  quality: number;
+  target_size: number;
+  target_PSNR: number;
+  method: number;
+  sns_strength: number;
+  filter_strength: number;
+  filter_sharpness: number;
+  filter_type: number;
+  partitions: number;
+  segments: number;
+  pass: number;
+  show_compressed: number;
+  preprocessing: number;
+  autofilter: number;
+  partition_limit: number;
+  alpha_compression: number;
+  alpha_filtering: number;
+  alpha_quality: number;
+  lossless: number;
+  exact: number;
+  image_hint: number;
+  emulate_jpeg_size: number;
+  thread_level: number;
+  low_memory: number;
+  near_lossless: number;
+  use_delta_palette: number;
+  use_sharp_yuv: number;
+}
+
+export interface WebPModule extends EmscriptenWasm.Module {
+  /** Allocate `size` bytes inside the module heap; returns a pointer. */
+  create_buffer(size: number): number;
+  /** Release a pointer previously returned by create_buffer. */
+  destroy_buffer(pointer: number): void;
+  encode(
+    pointer: number,
+    width: number,
+    height: number,
+    options: EncodeOptions,
+  ): Uint8Array | null;
+  /**
+   * As `encode`, but assembles the output into the extended (VP8X) container
+   * with the profile in an ICCP chunk.
+   */
+  encode_with_icc_profile(
+    pointer: number,
+    width: number,
+    height: number,
+    options: EncodeOptions,
+    icc: Uint8Array,
+  ): Uint8Array | null;
+}
+
+declare var moduleFactory: EmscriptenWasm.ModuleFactory<WebPModule>;
+
+export default moduleFactory;

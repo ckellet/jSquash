@@ -1,0 +1,7 @@
+*.cpp
+*.o
+Makefile
+node_modules
+codec/*package.json
+*.d.ts.map
+tsconfig.tsbuildinfo

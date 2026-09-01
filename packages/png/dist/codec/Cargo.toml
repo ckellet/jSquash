@@ -1,0 +1,34 @@
+[package]
+name = "squoosh-png"
+version = "0.1.0"
+authors = ["Surma <surma@surma.dev>"]
+edition = "2018"
+publish = false
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O3", "--enable-simd", "--no-validation"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+png = "0.18.1"
+# Needed to deflate ICC profiles for the iCCP chunk. `png` writes that chunk
+# itself when `Info::icc_profile` is set, but exposes no way to set it from the
+# encoder - still true as of 0.18 - and its own writer goes through
+# `flate2::ZlibEncoder`. This is the compressor `png` already uses for IDAT, so
+# naming it directly adds no code to the binary - reaching for flate2 instead
+# would link miniz_oxide's deflate for +26.9 KB.
+fdeflate = "0.3"
+wasm-bindgen = "0.2.89"
+"js-sys" = "0.3.66"
+web-sys = { version = "0.3.66", features = ["ImageData"] }
+rgb = "0.8.37"
+
+[profile.release]
+# These crates are compute bound, not size bound - the largest is a couple of
+# hundred KB. opt-level = "s" was costing loop vectorisation and inlining in
+# the hot pixel loops for a saving that does not matter here.
+opt-level = 3
+lto = "fat"
+codegen-units = 1

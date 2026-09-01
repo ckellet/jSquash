@@ -1,0 +1,33 @@
+[package]
+name = "squoosh-oxipng"
+version = "0.1.0"
+authors = ["Ingvar Stepanyan <me@rreverser.com>"]
+edition = "2018"
+publish = false
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O3", "--enable-simd", "--no-validation"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# `zopfli` is deliberately left out of the feature list. It is in oxipng's
+# defaults, and enabling it was measured: it wins big only on unusually
+# compressible images and costs seconds per image of pure CPU, which does not
+# suit a request path. See the CHANGELOG for the numbers.
+oxipng = { version = "10.2", default-features = false, features = ["freestanding"] }
+wasm-bindgen = "0.2.92"
+log = { version = "0.4.11", features = ["release_max_level_off"] }
+wasm-bindgen-rayon = { version = "1.2.1", optional = true }
+
+[profile.release]
+# These crates are compute bound, not size bound - the largest is a couple of
+# hundred KB. opt-level = "s" was costing loop vectorisation and inlining in
+# the hot pixel loops for a saving that does not matter here.
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+
+[features]
+parallel = ["oxipng/parallel", "wasm-bindgen-rayon"]

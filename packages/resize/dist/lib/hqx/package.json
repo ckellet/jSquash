@@ -1,0 +1,8 @@
+{
+  "name": "squooshhqx",
+  "scripts": {
+    "build": "../../../../tools/build-rust.sh && npm run patch-glue",
+    "patch-glue": "node ../../../../tools/patch-wasm-glue.mjs pkg/squooshhqx.js pre.js"
+  },
+  "type": "module"
+}

@@ -1,0 +1,54 @@
+export const enum MozJpegColorSpace {
+  GRAYSCALE = 1,
+  RGB,
+  YCbCr,
+}
+
+export interface EncodeOptions {
+  quality: number;
+  baseline: boolean;
+  arithmetic: boolean;
+  progressive: boolean;
+  optimize_coding: boolean;
+  smoothing: number;
+  color_space: MozJpegColorSpace;
+  quant_table: number;
+  trellis_multipass: boolean;
+  trellis_opt_zero: boolean;
+  trellis_opt_table: boolean;
+  trellis_loops: number;
+  auto_subsample: boolean;
+  chroma_subsample: number;
+  separate_chroma_quality: boolean;
+  chroma_quality: number;
+}
+
+export interface MozJPEGModule extends EmscriptenWasm.Module {
+  /** Allocate `size` bytes inside the module heap; returns a pointer. */
+  create_buffer(size: number): number;
+  /** Release a pointer previously returned by create_buffer. */
+  destroy_buffer(pointer: number): void;
+  encode(
+    pointer: number,
+    width: number,
+    height: number,
+    options: EncodeOptions,
+  ): Uint8Array;
+  /**
+   * As `encode`, plus an ICC profile written into APP2 markers. The profile
+   * arrives through the same heap as the pixels, so `iccPointer` must come from
+   * `create_buffer`.
+   */
+  encode_with_icc_profile(
+    pointer: number,
+    width: number,
+    height: number,
+    options: EncodeOptions,
+    iccPointer: number,
+    iccLength: number,
+  ): Uint8Array;
+}
+
+declare var moduleFactory: EmscriptenWasm.ModuleFactory<MozJPEGModule>;
+
+export default moduleFactory;

@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "build": "EMSDK_VERSION=4.0.16 DEFAULT_CFLAGS='-Oz -flto' ../../../tools/build-cpp.sh"
+  },
+  "type": "module"
+}

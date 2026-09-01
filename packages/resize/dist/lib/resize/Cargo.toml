@@ -1,0 +1,43 @@
+[package]
+name = "squoosh-resize"
+version = "0.1.0"
+authors = ["Surma <surma@surma.link>"]
+publish = false
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O3", "--enable-simd", "--no-validation"]
+
+[lib]
+#crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib"]
+
+[features]
+default = []
+
+[dependencies]
+cfg-if = "0.1.2"
+wasm-bindgen = "0.2.38"
+# `rayon` is on by default from 0.8, and is dead weight here: this build is
+# single-threaded, so the parallel path can never be taken, but the code is
+# still linked. Turning it off is worth ~60 KB of wasm.
+resize = { version = "0.8.9", default-features = false, features = ["std"] }
+# `resize` 0.8 works in typed pixels; `rgb::FromSlice` is what turns the flat
+# buffers crossing the wasm boundary into the `[RGBA<_>]` slices it wants.
+rgb = "0.8"
+
+# The `console_error_panic_hook` crate provides better debugging of panics by
+# logging them with `console.error`. This is great for development, but requires
+# all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
+# code size when deploying.
+console_error_panic_hook = { version = "0.1.1", optional = true }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.2"
+
+[profile.release]
+# These crates are compute bound, not size bound - the largest is a couple of
+# hundred KB. opt-level = "s" was costing loop vectorisation and inlining in
+# the hot pixel loops for a saving that does not matter here.
+opt-level = 3
+lto = "fat"
+codegen-units = 1

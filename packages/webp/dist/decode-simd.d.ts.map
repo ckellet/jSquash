@@ -1,0 +1,1 @@
+{"version":3,"file":"decode-simd.d.ts","sourceRoot":"","sources":["../decode-simd.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;GAWG;AASH,QAAA,MAAQ,IAAI,0NAAE,OAAO,cAAE,MAAM,+CAAE,kBAAkB,iFAAE,cAAc,0DAC/B,CAAC;AAEnC,OAAO,EAAE,IAAI,EAAE,OAAO,EAAE,kBAAkB,EAAE,cAAc,EAAE,CAAC;AAC7D,YAAY,EAAE,YAAY,EAAE,aAAa,EAAE,MAAM,WAAW,CAAC;AAC7D,eAAe,MAAM,CAAC"}

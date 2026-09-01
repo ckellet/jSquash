@@ -1,0 +1,1 @@
+{"version":3,"file":"decode-scalar.d.ts","sourceRoot":"","sources":["../decode-scalar.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;GAWG;AASH,QAAA,MAAQ,IAAI,0NAAE,OAAO,cAAE,MAAM;;;;;;;;GAAE,kBAAkB;;;;;;;;GAAE,cAAc,0DAC/B,CAAC;AAEnC,OAAO,EAAE,IAAI,EAAE,OAAO,EAAE,kBAAkB,EAAE,cAAc,EAAE,CAAC;AAC7D,YAAY,EAAE,YAAY,EAAE,aAAa,EAAE,cAAc,EAAE,MAAM,WAAW,CAAC;AAC7E,eAAe,MAAM,CAAC"}

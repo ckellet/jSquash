@@ -1,0 +1,119 @@
+# Changelog
+
+## Unreleased
+
+### Fixed
+
+- `init()` now keeps the wasm it was given, so the call after a `dispose()`
+  re-instantiates from it instead of falling back to fetching the binary -
+  which a runtime like Cloudflare Workers cannot do. `dispose()` is also safe
+  to call with work outstanding: the reclaim waits for the calls already in
+  flight rather than pulling the heap out from under them.
+
+### Added
+
+- `compression` option on `encode`, one of `none`, `fastest`, `fast`,
+  `balanced` or `high`. Defaults to `fastest`, which is what this package has
+  always produced, so existing callers are unaffected. Measured on the
+  1024x768 bench image: `fastest` is 1.99 MB in 6.9 ms, `balanced` 1.22 MB in
+  237 ms, and `high` is no smaller than `balanced` while taking a third longer.
+  Every level decodes to identical pixels.
+
+  Reach for `balanced` when this encoder is the last step and bytes matter more
+  than milliseconds; stay on `fastest` when `@jsquash/oxipng` follows, since it
+  recompresses from scratch and gets smaller anyway. Making the slower levels
+  reachable links flate2, which costs ~10 KB brotli whether or not they are
+  used.
+- ICC colour profile passthrough. Previously the `iCCP` chunk was discarded on
+  decode and never written on encode, so a Display P3 or Adobe RGB image
+  silently round-tripped as if it were sRGB.
+    - `decodeWithMetadata` returns `{ image, metadata }`, where `metadata.icc`
+      holds the raw profile when the image carries one
+    - `readIccProfile` reads the profile without decoding any pixels
+    - `encode` accepts an `icc` option to embed a profile
+- `decode` and `encode` are unchanged for callers who do not ask for metadata.
+  Adding a profile is the only thing that changes the bytes; supplying none
+  leaves output exactly as the encoder would otherwise have produced it.
+  Profiles are carried, never applied - see
+  [docs/colour-management.md](/docs/colour-management.md).
+
+### Changed
+
+- Updates the `png` crate to 0.18.1, from 0.17.10. Decoding is ~8% faster on
+  the same input, with identical pixels. Encoded output changes slightly - it
+  came out 0.4% smaller on the bench image - because 0.18 pairs the fast
+  compressor with the `Up` row filter rather than `Sub`.
+- The encoder asks for `Compression::Fastest` unless told otherwise. `png` 0.18
+  changed its default to `Balanced`, which routes image data through flate2:
+  on the bench image that is 35x slower to encode, for output that
+  `@jsquash/oxipng` still beats (1.28 MB against 1.13 MB at level 2). Adopting
+  that silently would have been a severe regression for anyone already
+  pairing this encoder with the optimiser.
+
+## @jsquash/png@3.1.1
+
+### Fixes
+
+- Fixes the type definitions for the `encode` and `decode` methods to work correctly with the intended bitDepths.
+
+## @jsquash/png@3.1.0
+
+### Added
+
+- Added `bitDepth` option to `decode` method to allow decoding of 16-bit PNGs to their 16-bit RGBA values
+- Added `encode` method to allow encoding of 16-bit RGBA image data
+    - A Uint16Array is required for the pixel data when `bitDepth` is set to 16
+
+## @jsquash/png@3.0.1
+
+### Fixes
+
+- Fixes the decoding of PNG images using non-rgba color types.
+
+## @jsquash/png@3.0.0
+
+### Breaking Changes
+
+- `encode` method now returns an `ArrayBuffer` which matches the return type of other jSquash `encode` methods
+- Ignores checksum errors. Allows images with invalid header chunks to be decoded (Fixes [#44](https://github.com/jamsinclair/jSquash/issues/44))
+- Upgrades codec to image-png 0.17.10 (increases wasm file size by 54KB)
+- Codec wasm and js files moved to /codec/pkg dir (due to addition of Rust source)
+    - If you are accessing the wasm file by path you'll need to update your paths to reference `node_modules/@jsquash/png/codec/pkg/squoosh_png_bg.wasm`. It's now nested in the `pkg` dir.
+
+## @jsquash/png@2.2.0
+
+### Adds
+
+- Adds Node.js ESM support
+    - Updates relative imports to use file extensions
+    - Adds `module` field to relevant `package.json`
+    - Updates pre.js to polyfill ImageData for Node.js
+
+### Misc.
+
+- Removes *.d.ts.map files from the package
+
+## @jsquash/png@2.1.4
+
+### Fixes
+
+- Removes unused wasm-feature-detect dependency
+
+## @jsquash/png@2.1.2
+
+Re-release of 2.1.1 with correct dist files
+### Fixes
+
+- Check for caches object on `globalThis` before using it
+
+## @jsquash/png@2.1.1
+
+### Fixes
+
+- Check for caches object on `globalThis` before using it
+
+## @jsquash/png@2.1.0
+
+### Added
+
+- Include polyfills for Cloudflare Worker environment for easier compatibility

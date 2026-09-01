@@ -1,0 +1,18 @@
+{
+  "name": "squoosh-oxipng",
+  "type": "module",
+  "collaborators": [
+    "Ingvar Stepanyan <me@rreverser.com>"
+  ],
+  "version": "0.1.0",
+  "files": [
+    "squoosh_oxipng_bg.wasm",
+    "squoosh_oxipng.js",
+    "squoosh_oxipng.d.ts"
+  ],
+  "main": "squoosh_oxipng.js",
+  "types": "squoosh_oxipng.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
